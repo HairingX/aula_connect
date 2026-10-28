@@ -34,9 +34,8 @@ from .exceptions import (
     OAuthError,
 )
 
-# Import MitID BrowserClient from the local module
 try:
-    from .mitid.browser_client import BrowserClient
+    from mitid_connect import BrowserClient
 
     MITID_AVAILABLE = True
 except ImportError as e:

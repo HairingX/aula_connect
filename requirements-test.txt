@@ -5,7 +5,5 @@ pytest==9.2.0
 pytest-cov==7.1.0
 # The package's dependencies, at the versions Home Assistant's integration pins.
 beautifulsoup4==4.13.3
-lxml==6.1.2
-pycryptodomex==3.24.1
-qrcode==8.2
+mitid_connect==0.0.1
 requests==2.34.2

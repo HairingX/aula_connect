@@ -13,11 +13,10 @@ newsletters into typed models. The Home Assistant integration `ha_aula_connect` 
 - It imports nothing from Home Assistant. Aula sends some times as UTC that are the
   institution's local time; `set_time_zone` names that time zone, and the system's is taken
   without it.
-- `aula_connect.login` is the MitID login, `aula_connect.api` the Aula API client with its
-  models and parsers, and `aula_connect.AulaClient` the two together, with the tokens kept
-  fresh.
-- The code is GPL-3.0-or-later, as the Aula integration it comes from; the MitID browser client
-  in `aula_connect.login.mitid` is MIT-licensed by its author.
+- `aula_connect.login` is the login to Aula through MitID, `aula_connect.api` the Aula API client
+  with its models and parsers, and `aula_connect.AulaClient` the two together, with the tokens
+  kept fresh. MitID itself is the `mitid_connect` library's.
+- The code is GPL-3.0-or-later, as the Aula integration it comes from.
 
 <!-- BEGIN HairingX/workflows: shared; edit it there -->
 ## Shared by every library
