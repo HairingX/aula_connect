@@ -73,4 +73,4 @@ reportPrivateUsage = "none"
 transition = """The library starts from the Aula integration's MitID login and API client, which \
 were written before the shared standard: they are typed and tested module by module."""
 # The coverage the tests reach now; each pull request raises it, until it is 100.
-coverage = 47
+coverage = 49
