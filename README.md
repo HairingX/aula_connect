@@ -28,5 +28,5 @@ data = client.login()
 The login and API client come from the Home Assistant integration
 [HairingX/aula](https://github.com/HairingX/aula), a fork of
 [scaarup/aula](https://github.com/scaarup/aula), and are licensed as it is: GNU GPL v3.0 or later
-(`LICENSE`). The MitID login started as the Aula login client by mchrdk; the MitID browser client
-(`aula_connect.login.mitid`) is the work of Hundter, under the MIT licence.
+(`LICENSE`). The MitID login started as the Aula login client by mchrdk. MitID itself is reached
+through [mitid_connect](https://github.com/HairingX/mitid_connect).
