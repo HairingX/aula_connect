@@ -42,6 +42,17 @@ except ImportError as e:
     MITID_AVAILABLE = False
 
 
+
+
+def _oauth_error(response: requests.Response) -> str | None:
+    """The OAuth 2.0 error code of an error response, None if it has none."""
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    error = body.get("error") if isinstance(body, dict) else None
+    return error if isinstance(error, str) else None
+
 class AulaLoginClient:
     """
     Main client for Aula platform authentication with MitID integration.
@@ -1292,6 +1303,11 @@ class AulaLoginClient:
                 raise TokenExpiredError(
                     f"Refresh token rejected by server (HTTP {response.status_code})"
                 )
+            elif response.status_code == 400 and _oauth_error(response) == "invalid_grant":
+                # OAuth 2.0 (RFC 6749, 5.2) answers 400 invalid_grant for a refresh token that is
+                # invalid, expired or revoked: only a new login helps.
+                self.log(" Refresh token no longer valid. Re-authentication required.", "ERROR")
+                raise TokenExpiredError("Refresh token rejected by server (invalid_grant)")
             elif response.status_code >= 500 or response.status_code == 429:
                 self.log(
                     f" Token renewal transient error (HTTP {response.status_code}). Will retry.",
