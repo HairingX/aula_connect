@@ -1,0 +1,16 @@
+__pycache__/
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.coverage
+.idea/
+.DS_Store
+.claude/worktrees/
+mysecrets.py
+
+# Responses captured from a real Aula account hold children's personal data: they stay on the
+# machine they were captured on. Only fixtures made up for the tests are tracked.
+tests/api/fixtures/*
+!tests/api/fixtures/easyiq_weekplan_response.json
