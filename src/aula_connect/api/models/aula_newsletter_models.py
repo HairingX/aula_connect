@@ -1,3 +1,5 @@
+"""The weekly newsletters of MinUddannelse."""
+
 from dataclasses import dataclass
 import datetime
 from typing import List

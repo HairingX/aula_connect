@@ -1,14 +1,18 @@
+"""Aula's answer to presence.getDailyOverview."""
+
 from typing import NotRequired, TypedDict, List
 
 from .common_data import AulaStatusData
 
 class AulaDailyOverviewInstitutionProfileData(TypedDict):
+    """The child's institution profile."""
     id: NotRequired[str|None]
     institutionCode: NotRequired[str|None]
     institutionName: NotRequired[str|None]
     metadata: NotRequired[str|None]
 
 class AulaDailyOverviewLocationData(TypedDict):
+    """Where the child is."""
     description: NotRequired[str|None]
     endDate: NotRequired[str|None]
     endTime: NotRequired[str|None]
@@ -19,6 +23,7 @@ class AulaDailyOverviewLocationData(TypedDict):
     symbol: NotRequired[str|None]
 
 class AulaDailyOverviewData(TypedDict):
+    """A child's presence today."""
     activityType: NotRequired[str|None]
     checkInTime: NotRequired[str|None]
     checkOutTime: NotRequired[str|None]
@@ -38,6 +43,7 @@ class AulaDailyOverviewData(TypedDict):
 
 
 class AulaGetDailyOverviewResponse(TypedDict):
+    """The answer, with the children's presence."""
     data: List[AulaDailyOverviewData]
     status: AulaStatusData
     version: str

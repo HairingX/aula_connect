@@ -1,8 +1,11 @@
+"""The user's and the children's profiles, their presence, and the login's result."""
+
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import List, Optional
 @dataclass
 class AulaProfilePicture:
+    """A profile's picture."""
     id: int
     bucket: Optional[str|None] = None
     is_image_scaling_pending: Optional[bool|None] = None
@@ -11,6 +14,7 @@ class AulaProfilePicture:
 
 @dataclass
 class AulaInstitutionProfile:
+    """A profile at an institution."""
     id: int
     institution_code: str
     institution_name: str
@@ -18,17 +22,20 @@ class AulaInstitutionProfile:
 
 @dataclass
 class AulaInstitutionGroup:
+    """A group at an institution, such as a class."""
     id: int
     name: str
     short_name: str
 
 @dataclass
 class AulaProfileRelation:
+    """The main group of a child."""
     child_id: int
     main_group: AulaInstitutionGroup
 
 @dataclass
 class AulaChildProfile:
+    """A child of the user."""
     first_name: str
     id: int
     institution_code: str
@@ -42,6 +49,7 @@ class AulaChildProfile:
 
 @dataclass
 class AulaProfile:
+    """The user's profile, with the children and the institution profiles."""
     children: List[AulaChildProfile]
     first_name: str
     institution_profiles: List[AulaInstitutionProfile]
@@ -52,6 +60,7 @@ class AulaProfile:
 
 @dataclass
 class AulaToken:
+    """A widget token, and when it was fetched."""
     bearer_token: str
     timestamp: datetime
     expires_at: Optional[datetime] = None
@@ -59,6 +68,7 @@ class AulaToken:
 
 @dataclass
 class AulaWidget:
+    """A widget an institution has."""
     id: int
     name: str
     widget_id: str
@@ -69,6 +79,7 @@ class AulaWidget:
 
 @dataclass
 class AulaLocation:
+    """Where a child is, as the daily overview says."""
     description: str
     id: int
     name: str
@@ -78,6 +89,7 @@ class AulaLocation:
 
 @dataclass
 class AulaDailyOverview:
+    """A child's presence today."""
     id: int
     institution_profile: AulaInstitutionProfile
     status: int
@@ -92,15 +104,12 @@ class AulaDailyOverview:
     is_planned_times_outside_opening_hours: Optional[bool|None] = None
     location: Optional[AulaLocation|None] = None
     spare_time_activity: Optional[str|None] = None
-    # activity_type: int
-    # '''Unsure of the data type in this, need more info to support it wholefully. Always appear to be 0'''
-    # editable_presence_states: Optional[List[Any]|None]
-    # '''Unsure of the data type in this, need more info to support it wholefully. Always appear empty'''
-    # sleep_intervals: Optional[List[Any]|None]
-    # '''Unsure of the data type in this, need more info to support it wholefully. Always appear empty'''
+    # Aula's activityType, editablePresenceStates and sleepIntervals are left out: they have
+    # only ever been seen as 0 or empty, so their form is not known.
 
 @dataclass
 class AulaLoginData:
+    """What a login read: the profiles, the widgets and the API version."""
     api_version: int
     profiles: List[AulaProfile]
     widgets: List[AulaWidget]

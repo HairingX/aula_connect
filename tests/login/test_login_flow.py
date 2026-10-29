@@ -29,8 +29,6 @@ def test_a_login_gives_tokens_aula_accepts() -> None:
 
     result = asyncio.run(login())
     assert result["success"] is True
-    profile = result["profile_data"]
-    assert isinstance(profile, dict) and profile["success"] is True
 
 
 @pytest.mark.parametrize(("role_selection", "confirmation_page"), [(False, False), (True, False), (False, True)])

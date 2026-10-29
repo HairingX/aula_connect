@@ -195,7 +195,3 @@ class HttpSession:
     async def post(self, url: str, **kwargs: Any) -> HttpResponse:
         """Send a POST request."""
         return await self.request("POST", url, **kwargs)
-
-    async def put(self, url: str, **kwargs: Any) -> HttpResponse:
-        """Send a PUT request."""
-        return await self.request("PUT", url, **kwargs)

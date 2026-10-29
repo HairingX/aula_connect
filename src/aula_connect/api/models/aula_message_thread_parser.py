@@ -1,3 +1,5 @@
+"""Reading Aula's message threads and messages into the models."""
+
 from typing import List
 
 from ..responses.get_messages_for_thread_response import *
@@ -9,8 +11,10 @@ from .aula_parser import AulaParser
 
 class AulaMessageThreadParser(AulaParser):
 
+    """Reads Aula's message threads and messages."""
     @staticmethod
     def parse_message_contact(data: AulaThreadRecipientData | None) -> AulaThreadRecipient :
+        """A sender or recipient; raises ValueError for no data."""
         if not data: raise ValueError()
         result = AulaThreadRecipient(
             answer_directly_name = AulaMessageThreadParser._parse_str(data.get("answerDirectlyName")),
@@ -21,11 +25,13 @@ class AulaMessageThreadParser(AulaParser):
 
     @staticmethod
     def parse_message_contacts(data: List[AulaThreadRecipientData] | None) -> List[AulaThreadRecipient]:
+        """The senders or recipients."""
         if data is None: return []
         return list_without_none(map(AulaMessageThreadParser.parse_message_contact, data))
 
     @staticmethod
     def parse_message_thread_regarding_child(data: AulaThreadChildData | None) -> AulaThreadRegardingChild:
+        """A child a thread is about; raises ValueError for no data."""
         if not data: raise ValueError()
         result = AulaThreadRegardingChild(
             display_name = AulaMessageThreadParser._parse_str(data.get("displayName")),
@@ -36,11 +42,13 @@ class AulaMessageThreadParser(AulaParser):
 
     @staticmethod
     def parse_message_thread_regarding_children(data: List[AulaThreadChildData] | None) -> List[AulaThreadRegardingChild]:
+        """The children a thread is about."""
         if data is None: return []
         return list_without_none(map(AulaMessageThreadParser.parse_message_thread_regarding_child, data))
 
     @staticmethod
     def parse_message_text(data: AulaMessageTextData | None) -> AulaMessageText | None:
+        """The text of a message, None for no data."""
         if not data: return None
         result = AulaMessageText(
             html = AulaMessageThreadParser._parse_str(data.get("html")),
@@ -49,6 +57,7 @@ class AulaMessageThreadParser(AulaParser):
 
     @staticmethod
     def parse_message(data: AulaMessageData | None) -> AulaMessage | None:
+        """A message; raises ValueError for no data."""
         if not data: raise ValueError()
         result = AulaMessage(
             can_reply_to_message = AulaMessageThreadParser._parse_nullable_bool(data.get("canReplyToMessage")),
@@ -63,6 +72,7 @@ class AulaMessageThreadParser(AulaParser):
 
     @staticmethod
     def parse_message_preview(data: AulaThreadLatestMessageData | None) -> AulaMessagePreview | None:
+        """The newest message of a thread; raises ValueError for no data."""
         if not data: raise ValueError()
         result = AulaMessagePreview(
             id = AulaMessageThreadParser._parse_str(data.get("id")),
@@ -73,16 +83,19 @@ class AulaMessageThreadParser(AulaParser):
 
     @staticmethod
     def parse_messages(data: List[AulaMessageData] | None) -> List[AulaMessage]:
+        """The messages."""
         if data is None: return []
         return list_without_none(map(AulaMessageThreadParser.parse_message, data))
 
     @staticmethod
     def parse_messages_response(data: AulaGetMessagesForThreadResponse | None) -> List[AulaMessage]:
+        """The messages of Aula's answer to messaging.getMessagesForThread."""
         if data is None: return []
         return AulaMessageThreadParser.parse_messages(data["data"]["messages"])
 
     @staticmethod
     def parse_message_thread(data: AulaThreadData | None) -> AulaMessageThread | None:
+        """A thread, None for no data."""
         if not data: return None
         result = AulaMessageThread(
             creator = AulaMessageThreadParser.parse_message_contact(data.get("creator")),
@@ -105,10 +118,12 @@ class AulaMessageThreadParser(AulaParser):
 
     @staticmethod
     def parse_message_threads(data: List[AulaThreadData] | None) -> List[AulaMessageThread]:
+        """The threads, leaving out those with no data."""
         if data is None: return []
         return list_without_none(map(AulaMessageThreadParser.parse_message_thread, data))
 
     @staticmethod
     def parse_message_threads_response(data: AulaGetMessageThreadsResponse | None) -> List[AulaMessageThread]:
+        """The threads of Aula's answer to messaging.getThreads."""
         if data is None: return []
         return AulaMessageThreadParser.parse_message_threads(data["data"]["threads"])

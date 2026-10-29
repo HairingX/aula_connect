@@ -14,19 +14,23 @@ import hashlib
 import json
 import secrets
 import time
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from types import TracebackType
 from typing import Self
 from urllib.parse import urlencode
 
 from aiohttp import web
 from aiohttp.test_utils import TestServer
-from mitid_connect.testing import Network, SimulatedMitID
+from mitid_connect.testing import Network, SimulatedMitID, User
 
 from .api.aula_proxy_client import AulaProxyClient
 from .login import AulaLoginClient
 
 APP_REDIRECT_URI = "https://app-private.aula.dk"
 """Where Aula sends the app back to, with the code; it is never requested."""
+
+Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
+"""How a simulated server answers a request."""
 
 
 def _form(action: str, fields: dict[str, str], extra: str = "") -> str:
@@ -42,8 +46,12 @@ class SimulatedAulaLogin:
     """
 
     def __init__(
-        self, users: set[str] | None = None, identities: list[str] | None = None, network: Network | None = None
+        self,
+        users: Iterable[str] | Mapping[str, User] | None = None,
+        identities: list[str] | None = None,
+        network: Network | None = None,
     ) -> None:
+        """A chain whose MitID knows `users` - user IDs with the app only, or each user ID's `User` - and offers `identities`."""
         self.network = network or Network()
         self.mitid = SimulatedMitID(users if users is not None else {"parent"}, network=self.network)
         self.identities = identities or []
@@ -58,6 +66,9 @@ class SimulatedAulaLogin:
         self.renewals = 0
         """How many times an access token was renewed with a refresh token."""
         self.revoked: set[str] = set()
+        self.answers: dict[str, Handler] = {}
+        """Answers that replace a step's own, by its method and path, such as "GET /broker/back-to-aula",
+        for the answers the real chain gives only now and then."""
         self._state = ""
         self._code_challenge = ""
         self._code = ""
@@ -65,7 +76,7 @@ class SimulatedAulaLogin:
         self._saml_mitid = secrets.token_hex(8)
         self._saml_aula = secrets.token_hex(8)
         self._server: TestServer | None = None
-        self.app = web.Application(middlewares=[self.network.middleware])
+        self.app = web.Application(middlewares=[self.network.middleware, self._answer])
         self.app.add_routes(
             [
                 web.get("/login/simplesaml/module.php/oidc/authorize.php", self._authorize),
@@ -84,7 +95,6 @@ class SimulatedAulaLogin:
                 web.post("/login/simplesaml/module.php/saml/sp/saml2-acs.php/uni-sp", self._aula_acs),
                 web.get("/login/oidc/callback", self._oidc_callback),
                 web.post("/login/simplesaml/module.php/oidc/token.php", self._token),
-                web.get("/api/v22/", self._api_test),
             ]
         )
 
@@ -113,8 +123,12 @@ class SimulatedAulaLogin:
         client.broker_url = f"{self.url}/broker"
         client.nemlogin_url = f"{self.url}/nemlogin"
         client.mitid_url = self.mitid.url
-        client.api_test_base = f"{self.url}/api/v22/"
         return client
+
+    @web.middleware
+    async def _answer(self, request: web.Request, handler: Handler) -> web.StreamResponse:
+        answer = self.answers.get(f"{request.method} {request.path}")
+        return await (answer or handler)(request)
 
     @staticmethod
     def _need_cookie(request: web.Request, name: str, value: str | None = None) -> None:
@@ -289,12 +303,6 @@ class SimulatedAulaLogin:
         self._code = ""
         return self._issue()
 
-    async def _api_test(self, request: web.Request) -> web.Response:
-        token = request.query.get("access_token")
-        if token is not None and token not in self.refresh_tokens.values():
-            return web.json_response({"status": {"message": "unauthorized"}}, status=401)
-        return web.json_response({"status": {"code": 0}, "data": {"issued": time.time()}})
-
 
 def _jwt(lifetime: float = 3600) -> str:
     def part(value: dict[str, object]) -> str:
@@ -318,6 +326,8 @@ class SimulatedAulaApi:
         self, access_token: str = "access", network: Network | None = None, login: SimulatedAulaLogin | None = None
     ) -> None:
         self.access_token = access_token
+        self.version = self.VERSION
+        """The version the API is at now; Aula answers 410 Gone at an older one."""
         self.network = network or Network()
         self.login = login
         """The login chain whose access tokens the API accepts too, as Aula's API accepts its own."""
@@ -344,14 +354,19 @@ class SimulatedAulaApi:
         self.easyiq_events: list[dict[str, object]] = []
         self.newsletters: list[dict[str, object]] = []
         self.widget_tokens: set[str] = set()
+        self.widget_token_lifetime = 3600.0
+        """Seconds a widget token is valid for when handed out; Aula now and then hands out one expired already."""
         self.requests: list[str] = []
         """The Aula API methods and widget paths asked for, in order."""
+        self.answers: dict[str, Handler] = {}
+        """Answers that replace the API's own: by the Aula API method, such as "presence.getDailyOverview",
+        or by the method and path of a widget's request, such as "GET /meebook/relatedweekplan/all"."""
         self._server: TestServer | None = None
-        self.app = web.Application(middlewares=[self.network.middleware])
+        self.app = web.Application(middlewares=[self.network.middleware, self._answer])
         self.app.add_routes(
             [
-                web.get(f"/api/v{self.VERSION}", self._api),
-                web.post(f"/api/v{self.VERSION}", self._api),
+                web.get("/api/v{version:[0-9]+}", self._api),
+                web.post("/api/v{version:[0-9]+}", self._api),
                 web.get("/meebook/relatedweekplan/all", self._meebook),
                 web.post("/easyiq/weekplaninfo", self._easyiq),
                 web.get("/minuddannelse/ugebrev", self._minuddannelse),
@@ -384,6 +399,12 @@ class SimulatedAulaApi:
         client.min_uddannelse_api = f"{self.url}/minuddannelse"
         return client
 
+    @web.middleware
+    async def _answer(self, request: web.Request, handler: Handler) -> web.StreamResponse:
+        key = request.query.get("method", "") if request.path.startswith("/api/") else f"{request.method} {request.path}"
+        answer = self.answers.get(key)
+        return await (answer or handler)(request)
+
     @staticmethod
     def _ok(data: object) -> web.Response:
         return web.json_response({"status": {"code": 0, "message": "OK"}, "data": data, "version": SimulatedAulaApi.VERSION})
@@ -393,6 +414,10 @@ class SimulatedAulaApi:
         return authorization.startswith("Bearer ") and authorization.removeprefix("Bearer ") in self.widget_tokens
 
     async def _api(self, request: web.Request) -> web.Response:
+        version = int(request.match_info["version"])
+        if version != self.version:
+            status = 410 if version < self.version else 404
+            return web.json_response({"status": {"code": status, "message": "Not this version"}}, status=status)
         token = request.query.get("access_token")
         issued = self.login.refresh_tokens.values() if self.login is not None else ()
         if token != self.access_token and token not in issued:
@@ -441,7 +466,7 @@ class SimulatedAulaApi:
             case "calendar.getBirthdayEventsForInstitutions":
                 return self._ok(self.birthdays)
             case "aulaToken.getAulaToken":
-                token = _jwt()
+                token = _jwt(self.widget_token_lifetime)
                 self.widget_tokens.add(token)
                 return self._ok(token)
             case _:

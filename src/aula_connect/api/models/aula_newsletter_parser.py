@@ -1,3 +1,5 @@
+"""Reading MinUddannelse's weekly newsletters into the models."""
+
 from datetime import timedelta, date
 from hashlib import sha256
 from typing import List
@@ -13,8 +15,10 @@ from .aula_parser import AulaParser
 
 
 class AulaNewsletterParser(AulaParser):
+    """Reads MinUddannelse's weekly newsletters."""
     @staticmethod
     def parse_person(data: AulaWeeklyNewsletterPersonData, from_date: date) -> AulaWeeklyNewsletter | None:
+        """A child's newsletters of the week from `from_date`, each with an id stable across reads; None for a child with no name or none."""
         full_name = AulaNewsletterParser._parse_str(data.get("navn"))
         if not full_name:
             return None
@@ -55,6 +59,7 @@ class AulaNewsletterParser(AulaParser):
 
     @staticmethod
     def parse_response(data: AulaGetWeeklyNewsletterResponse | None, from_date: date) -> List[AulaWeeklyNewsletter]:
+        """The children's newsletters of MinUddannelse's answer for the week from `from_date`."""
         if not data:
             return []
         personer = data.get("personer")

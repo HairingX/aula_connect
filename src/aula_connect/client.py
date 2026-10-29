@@ -1,3 +1,5 @@
+"""Aula read with tokens that are kept fresh: the API client and the login client together."""
+
 from typing import Callable, List
 import datetime
 import logging
@@ -35,6 +37,13 @@ TOKEN_REFRESH_BUFFER_SECONDS = 300
 
 
 class AulaClient:
+    """Aula's API, read with an access token renewed before it expires, and again where Aula refuses it.
+
+    Raises from every read, besides what the API client raises:
+        AulaCredentialError: The tokens can no longer be renewed; only a new login helps.
+        ConnectionError: The tokens could not be renewed for now.
+    """
+
     aula_version: int = int(API_VERSION)
     _proxy: AulaProxyClient
 
@@ -48,6 +57,14 @@ class AulaClient:
         login_client: AulaLoginClient,
         token_update_callback: Callable[[str, str, float], None] | None = None,
     ):
+        """Read Aula on `session` with the tokens a login gave.
+
+        Args:
+            expires_at: When the access token expires, in seconds since the epoch.
+            login_client: The login client that renews the tokens.
+            token_update_callback: Called with the access token, the refresh token and their
+                expiry each time they are renewed, to keep them.
+        """
         self._access_token: str = access_token
         self._refresh_token: str = refresh_token
         self._expires_at: float = expires_at
@@ -64,56 +81,56 @@ class AulaClient:
         return self._proxy
 
     async def connection_check(self) -> None:
-        """
-        Attempts to log in using the proxy with token-based auth.
+        """Log in to Aula's API, and take the version it is at.
+
         Raises:
-            AulaCredentialError: If access to the Aula API is denied.
-            ConnectionRefusedError: If the API URL is unreachable.
+            AulaCredentialError: Aula refused the access token.
+            ConnectionRefusedError: Aula's API could not be found.
         """
         await self._ensure_valid_token()
         await self._proxy.login()
         self.aula_version = self._proxy.api_version
 
-    def has_widget(self, widgetid: AulaWidgetId):
+    def has_widget(self, widgetid: AulaWidgetId) -> bool:
+        """Whether one of the institutions has the widget, as the login read them."""
         return self._proxy.has_widget(widgetid)
 
     async def login(self) -> AulaLoginData:
+        """The user's profiles and the institutions' widgets; see `AulaProxyClient.login`."""
         await self._ensure_valid_token()
         return await self._proxy.login()
 
     async def _force_refresh_access_token(self) -> bool:
-        """Force-refresh the access token, bypassing the expiry check.
-
-        Used as a callback by AulaProxyClient when it receives a 401 from the
-        Aula API after the token was already validated — i.e. a transient
-        server-side issue.  Returns True on success, False on transient failure.
+        """Renew the access token whatever its expiry, and answer whether it was renewed.
 
         Raises:
-            AulaCredentialError: If credentials are permanently invalid
-                (expired refresh token, no refresh token). This must propagate
-                to the coordinator so reauth is triggered immediately.
+            AulaCredentialError: The tokens can no longer be renewed; only a new login helps.
         """
-        self._expires_at = 0  # Force the expiry check to trigger a refresh
+        self._expires_at = 0
         try:
             await self._ensure_valid_token()
             return True
         except AulaCredentialError:
-            raise  # Permanent credential failure — must trigger reauth
+            raise
         except Exception:
             _LOGGER.debug("Forced token refresh failed (transient)", exc_info=True)
             return False
 
     async def _ensure_valid_token(self) -> None:
-        """Check token expiration and refresh if needed, once for callers that ask at the same time."""
+        """Renew the access token where it expires within TOKEN_REFRESH_BUFFER_SECONDS, once for callers that ask at the same time.
+
+        Raises:
+            AulaCredentialError: The tokens can no longer be renewed; only a new login helps.
+            ConnectionError: The tokens could not be renewed for now.
+        """
         if time.time() < self._expires_at - TOKEN_REFRESH_BUFFER_SECONDS:
-            return  # Token still valid
+            return
 
         async with self._token_lock:
-            # Double-check after acquiring lock — another caller may have refreshed
+            # Another caller may have renewed it while this one waited.
             if time.time() < self._expires_at - TOKEN_REFRESH_BUFFER_SECONDS:
                 return
 
-            # Guard: no refresh token means we genuinely need re-authentication
             if not self._refresh_token:
                 raise AulaCredentialError("No refresh token available, re-authentication required")
 
@@ -126,29 +143,23 @@ class AulaClient:
             try:
                 success = await self._login_client.renew_access_token()
             except TokenExpiredError as err:
-                # Refresh token permanently invalid — trigger reauth
                 raise AulaCredentialError(
                     "Refresh token expired, re-authentication required"
                 ) from err
             except (NetworkError, OSError) as err:
-                # Transient network failure — don't trigger reauth, let coordinator retry
                 _LOGGER.warning("Network error during token refresh: %s", redact(err))
                 raise ConnectionError(f"Network error during token refresh: {redact(err)}") from None
 
             if not success:
-                # renew_access_token() returns False for transient issues (malformed
-                # server response, unexpected HTTP status, generic exceptions) — these
-                # are NOT credential rejections and must NOT trigger MitID reauth.
+                # An answer the renewal does not know is no refusal of the refresh token.
                 _LOGGER.warning("Token refresh returned False — treating as transient failure")
                 raise ConnectionError("Token refresh failed — server returned an unexpected response")
 
-            # Extract all new values before updating state
             tokens = self._login_client.tokens or {}
             new_access = str(tokens["access_token"])
             new_refresh = str(tokens.get("refresh_token", self._refresh_token))
             new_expires = float(tokens.get("expires_at", time.time() + 3600))
 
-            # Update in-memory state
             self._access_token = new_access
             self._refresh_token = new_refresh
             self._expires_at = new_expires
@@ -156,7 +167,6 @@ class AulaClient:
 
             _LOGGER.debug("Token refreshed successfully, expires at %s", new_expires)
 
-            # Persist tokens
             if self._token_update_callback:
                 self._token_update_callback(new_access, new_refresh, new_expires)
 
@@ -166,12 +176,14 @@ class AulaClient:
         start_datetime: datetime.datetime,
         end_datetime: datetime.datetime,
     ) -> List[AulaBirthdayEvent]:
+        """The birthdays at the children's institutions in the period."""
         await self._ensure_valid_token()
         return await self._proxy.get_birthday_events(profiles, start_datetime, end_datetime)
 
     async def get_daily_overviews(
         self, profiles: List[AulaProfile]
     ) -> List[AulaDailyOverview]:
+        """Today's presence of the profiles' children."""
         await self._ensure_valid_token()
         return await self._proxy.get_daily_overviews(profiles)
 
@@ -181,16 +193,19 @@ class AulaClient:
         start_datetime: datetime.datetime,
         end_datetime: datetime.datetime,
     ) -> List[AulaCalendarEvent]:
+        """The calendar events of the institution profiles in the period."""
         await self._ensure_valid_token()
         return await self._proxy.get_calendar_events(profiles, start_datetime, end_datetime)
 
     async def get_message_threads(self) -> List[AulaMessageThread]:
+        """The newest page of the user's message threads."""
         await self._ensure_valid_token()
         return await self._proxy.get_message_threads()
 
     async def get_notifications(
         self, profiles: List[AulaChildProfile]
     ) -> List[AULA_NOTIFICATION_TYPES]:
+        """The user's notifications about the children."""
         await self._ensure_valid_token()
         return await self._proxy.get_notifications(profiles)
 
@@ -200,6 +215,7 @@ class AulaClient:
         start_datetime: datetime.datetime,
         end_datetime: datetime.datetime,
     ) -> List[AulaWeeklyPlan]:
+        """The children's weekly plans in Meebook in the period."""
         await self._ensure_valid_token()
         return await self._proxy.get_weekly_plans(profiles, start_datetime, end_datetime)
 
@@ -209,6 +225,7 @@ class AulaClient:
         start_datetime: datetime.datetime,
         end_datetime: datetime.datetime,
     ) -> List[AulaEasyiqWeeklyPlan]:
+        """The children's weekly plans in EasyIQ in the period."""
         await self._ensure_valid_token()
         return await self._proxy.get_easyiq_weekly_plans(
             profiles, start_datetime, end_datetime
@@ -220,5 +237,6 @@ class AulaClient:
         start_datetime: datetime.datetime,
         end_datetime: datetime.datetime,
     ) -> List[AulaWeeklyNewsletter]:
+        """The children's weekly newsletters in MinUddannelse in the period."""
         await self._ensure_valid_token()
         return await self._proxy.get_newsletters(profiles, start_datetime, end_datetime)

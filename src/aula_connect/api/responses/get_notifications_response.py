@@ -1,8 +1,11 @@
+"""Aula's answer to notifications.getNotificationsForActiveProfile."""
+
 from typing import NotRequired, TypedDict, List
 
 from .common_data import AulaStatusData
 
 class AulaNotificationData(TypedDict):
+    """A notification, with the fields of every area."""
     expires: str
     institutionCode: str
     institutionProfileId: int
@@ -29,6 +32,7 @@ class AulaNotificationData(TypedDict):
     title: NotRequired[str|None]
 
 class AulaGetNotificationsResponse(TypedDict):
+    """The answer, with the notifications."""
     data: List[AulaNotificationData]
     status: AulaStatusData
     version: int

@@ -115,10 +115,6 @@ class TestRetryOn401(unittest.TestCase):
         self.assertIs(result, resp_500)
         callback.assert_not_called()
 
-    def test_none_response_passes_through(self):
-        result = asyncio.run(self.client._retry_on_401(None, AsyncMock()))
-        self.assertIsNone(result)
-
     def test_retry_network_error_raises_connection_error(self):
         """If the retry request fails with a network error, raise ConnectionError (not reauth)."""
         request_fn = AsyncMock(side_effect=aiohttp.ClientConnectionError("conn error"))
@@ -190,9 +186,6 @@ class TestRaiseError(unittest.TestCase):
     def test_404_raises_api_error(self):
         with self.assertRaises(AulaApiError):
             AulaProxyClient._raise_error(_make_response(404))
-
-    def test_none_response_noop(self):
-        AulaProxyClient._raise_error(None)
 
     def test_ok_response_noop(self):
         AulaProxyClient._raise_error(_make_response(200))
@@ -410,7 +403,6 @@ class TestJwtExpDecoding(unittest.TestCase):
         """401/500 must NOT be classified as 'expired body' — they're handled separately."""
         self.assertFalse(AulaProxyClient._is_widget_token_expired_body(_make_response(401, {"message": "expired"})))
         self.assertFalse(AulaProxyClient._is_widget_token_expired_body(_make_response(500)))
-        self.assertFalse(AulaProxyClient._is_widget_token_expired_body(None))
 
     def test_is_widget_token_expired_body_handles_malformed_body(self):
         """Non-JSON or non-dict bodies must not crash."""

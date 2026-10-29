@@ -1,9 +1,12 @@
+"""Aula's notifications, one model for each area of Aula they come from."""
+
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import List, Union
 
 class NotificationEventType(StrEnum):
+    """What happened, as a notification says."""
     CALENDAR_INVITED_TO_EVENT_RESPONSE_REQUIRED = "InvitedToEventResponseRequired"
     MEDIA_ADDED_TO_ALBUM = "MediaAddedToAlbum"
     MEDIA_NEW = "NewMedia"
@@ -11,10 +14,12 @@ class NotificationEventType(StrEnum):
     POSTS_SHARED_WITH_ME = "PostSharedWithMe"
 
 class NotificationType(StrEnum):
+    """How Aula shows a notification."""
     ALERT = "Alert"
     BADGE = "Badge"
 
 class NotificationArea(StrEnum):
+    """The area of Aula a notification comes from."""
     ALBUM = "Album"
     CALENDAR = "Calendar"
     GALLERY = "Gallery"
@@ -24,6 +29,7 @@ class NotificationArea(StrEnum):
 
 @dataclass
 class AulaNotificationBase:
+    """What every notification has."""
     notification_area: str
     notification_event_type: str
     notification_id: str
@@ -33,6 +39,7 @@ class AulaNotificationBase:
 
 @dataclass
 class AulaAlbumNotification(AulaNotificationBase):
+    """A notification of media added to an album."""
     album_id: int
     institution_code: str
     institution_profile_id: int
@@ -42,6 +49,7 @@ class AulaAlbumNotification(AulaNotificationBase):
 
 @dataclass
 class AulaCalendarEventNotification(AulaNotificationBase):
+    """A notification of a calendar event, such as an invitation to answer."""
     end_datetime: datetime
     event_id: int
     institution_code: str
@@ -53,6 +61,7 @@ class AulaCalendarEventNotification(AulaNotificationBase):
 
 @dataclass
 class AulaGalleryNotification(AulaNotificationBase):
+    """A notification of new media in the gallery."""
     album_id: int
     institution_code: str
     institution_profile_id: int
@@ -62,6 +71,7 @@ class AulaGalleryNotification(AulaNotificationBase):
 
 @dataclass
 class AulaMessageNotification(AulaNotificationBase):
+    """A notification of a new message."""
     # NOTE (issue #10): best-guess mapping pending real-world verification.
     # The real Aula folder id is documented as Thread.folderId (int|null) on
     # message threads; it is NOT confirmed to exist on the notification payload
@@ -79,6 +89,7 @@ class AulaMessageNotification(AulaNotificationBase):
 
 @dataclass
 class AulaPostNotification(AulaNotificationBase):
+    """A notification of a post shared with the user."""
     institution_code: str
     institution_profile_id: int
     title: str
@@ -87,6 +98,7 @@ class AulaPostNotification(AulaNotificationBase):
 
 @dataclass
 class AulaPresenceNotification(AulaNotificationBase):
+    """A notification about presence, such as a vacation registration to answer."""
     end_datetime: datetime
     institution_code: str
     institution_profile_id: int

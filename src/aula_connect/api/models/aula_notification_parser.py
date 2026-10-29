@@ -1,3 +1,5 @@
+"""Reading Aula's notifications into the models."""
+
 from typing import List
 import logging
 
@@ -9,8 +11,10 @@ from .aula_parser import AulaParser
 _LOGGER = logging.getLogger(__name__)
 
 class AulaNotificationParser(AulaParser):
+    """Reads Aula's notifications."""
     @staticmethod
     def parse_calendar_event(data: AulaNotificationData | None) -> AulaCalendarEventNotification | None:
+        """A calendar notification, None for no data."""
         if not data: return None
         result = AulaCalendarEventNotification(
             expires=AulaNotificationParser._parse_datetime(data.get("expires"), fix_timezone=True),
@@ -31,6 +35,7 @@ class AulaNotificationParser(AulaParser):
 
     @staticmethod
     def parse_message(data: AulaNotificationData | None) -> AulaMessageNotification | None:
+        """A message notification, None for no data."""
         if not data: return None
         result = AulaMessageNotification(
             expires=AulaNotificationParser._parse_datetime(data.get("expires"), fix_timezone=True),
@@ -54,6 +59,7 @@ class AulaNotificationParser(AulaParser):
 
     @staticmethod
     def parse_post(data: AulaNotificationData | None) -> AulaPostNotification | None:
+        """A post notification, None for no data."""
         if not data: return None
         result = AulaPostNotification(
             expires=AulaNotificationParser._parse_datetime(data.get("expires"), fix_timezone=True),
@@ -70,6 +76,7 @@ class AulaNotificationParser(AulaParser):
 
     @staticmethod
     def parse_presence(data: AulaNotificationData | None) -> AulaPresenceNotification | None:
+        """A presence notification, None for no data."""
         if not data: return None
         result = AulaPresenceNotification(
             expires=AulaNotificationParser._parse_datetime(data.get("expires"), fix_timezone=True),
@@ -117,6 +124,7 @@ class AulaNotificationParser(AulaParser):
 
     @staticmethod
     def parse_album(data: AulaNotificationData | None) -> AulaAlbumNotification | None:
+        """An album notification, None for no data."""
         if not data: return None
         result = AulaAlbumNotification(
             expires=AulaNotificationParser._parse_datetime(data.get("expires"), fix_timezone=True),
@@ -135,6 +143,7 @@ class AulaNotificationParser(AulaParser):
 
     @staticmethod
     def parse_gallery(data: AulaNotificationData | None) -> AulaGalleryNotification | None:
+        """A gallery notification, None for no data."""
         if not data: return None
         result = AulaGalleryNotification(
             expires=AulaNotificationParser._parse_datetime(data.get("expires"), fix_timezone=True),
@@ -153,6 +162,7 @@ class AulaNotificationParser(AulaParser):
 
     @staticmethod
     def parse_notification(data: AulaNotificationData | None) -> AULA_NOTIFICATION_TYPES | None:
+        """A notification, as the model of its area; None for no data or an area not known."""
         if not data: return None
 
         notification_area = data.get("notificationArea")
@@ -170,11 +180,12 @@ class AulaNotificationParser(AulaParser):
             case NotificationArea.PRESENCE:
                 return AulaNotificationParser.parse_presence(data)
             case _:
-                _LOGGER.warning(f"Notification '{notification_area}' is unknown, report to developer: {data}")
+                _LOGGER.warning("Notification '%s' (%s) is unknown, report to developer", notification_area, data.get("notificationEventType"))
                 return None
 
     @staticmethod
     def parse_notifications(data: List[AulaNotificationData] | None) -> List[AULA_NOTIFICATION_TYPES]:
+        """The notifications, leaving out those that cannot be read."""
         if data is None: return []
         results = list[AULA_NOTIFICATION_TYPES]()
         for item in data:
@@ -183,7 +194,7 @@ class AulaNotificationParser(AulaParser):
             try:
                 notification = AulaNotificationParser.parse_notification(item)
             except Exception as ex:
-                _LOGGER.warning(f"Failed to parse notification, skipping it: {ex}. Data: {item}")
+                _LOGGER.warning("Failed to parse a notification, skipping it: %s", type(ex).__name__)
                 continue
             if notification is not None:
                 results.append(notification)
@@ -191,5 +202,6 @@ class AulaNotificationParser(AulaParser):
 
     @staticmethod
     def parse_notification_response(data: AulaGetNotificationsResponse | None) -> List[AULA_NOTIFICATION_TYPES]:
+        """The notifications of Aula's answer to notifications.getNotificationsForActiveProfile."""
         if data is None: return []
         return AulaNotificationParser.parse_notifications(data["data"])

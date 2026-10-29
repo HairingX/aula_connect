@@ -1,7 +1,9 @@
+"""Reading Aula's values - numbers, texts, dates and times - as Python's."""
+
 from datetime import datetime, date, time, tzinfo
 import re
 import logging
-from typing import Any, List, TypeVar
+from typing import Any, List, TypeVar, cast
 
 _time_zone: tzinfo | None = None
 
@@ -87,8 +89,9 @@ class AulaParser:
     @staticmethod
     def _parse_int_list(value: Any) -> List[int]:
         if value and isinstance(value, list):
-            if isinstance(value[0], int):
-                return [int(val) for val in value] # type: ignore
+            items = cast(List[Any], value)
+            if isinstance(items[0], int):
+                return [int(val) for val in items]
         return list[int]()
 
     @staticmethod

@@ -1,3 +1,5 @@
+"""Reading Aula's calendar events into the models."""
+
 from typing import List
 
 from ..responses.get_events_by_profile_ids_and_resource_ids import *
@@ -7,8 +9,10 @@ from .aula_parser import AulaParser
 
 class AulaCalendarParser(AulaParser):
 
+    """Reads Aula's calendar events."""
     @staticmethod
     def parse_calendar_event(data: AulaEventData | None) -> AulaCalendarEvent | None:
+        """A calendar event, None for no data."""
         if not data: return None
         result = AulaCalendarEvent(
             all_day = AulaCalendarParser._parse_bool(data.get("allDay")),
@@ -35,11 +39,13 @@ class AulaCalendarParser(AulaParser):
 
     @staticmethod
     def parse_calendar_events(data: List[AulaEventData] | None) -> List[AulaCalendarEvent]:
+        """The calendar events, leaving out those with no data."""
         if data is None: return []
         return list_without_none(map(AulaCalendarParser.parse_calendar_event, data))
 
     @staticmethod
     def parse_calendar_event_resource(data: AulaPrimaryResourceData  | None) -> AulaCalendarEventResource | None:
+        """A resource an event uses, such as a room, None for no data."""
         if not data: return None
         result = AulaCalendarEventResource(
             id = AulaCalendarParser._parse_int(data.get("id")),
@@ -49,11 +55,13 @@ class AulaCalendarParser(AulaParser):
 
     @staticmethod
     def parse_calendar_event_resources(data: List[AulaPrimaryResourceData ] | None) -> List[AulaCalendarEventResource]:
+        """The resources, leaving out those with no data."""
         if data is None: return []
         return list_without_none(map(AulaCalendarParser.parse_calendar_event_resource, data))
 
     @staticmethod
     def parse_calendar_event_lesson_participant(data: AulaLessonParticipantData | None) -> AulaCalendarEventLessonParticipant | None:
+        """A teacher of a lesson, None for no data."""
         if not data: return None
         result = AulaCalendarEventLessonParticipant(
             participant_role = AulaCalendarParser._parse_str(data.get("participantRole")),
@@ -65,11 +73,13 @@ class AulaCalendarParser(AulaParser):
 
     @staticmethod
     def parse_calendar_event_lesson_participants(data: List[AulaLessonParticipantData] | None) -> List[AulaCalendarEventLessonParticipant]:
+        """The teachers of a lesson, leaving out those with no data."""
         if data is None: return []
         return list_without_none(map(AulaCalendarParser.parse_calendar_event_lesson_participant, data))
 
     @staticmethod
     def parse_calendar_event_lesson(data: AulaLessonData | None) -> AulaCalendarEventLesson | None:
+        """The lesson an event is, None for no data."""
         if not data: return None
         result = AulaCalendarEventLesson(
             lesson_id = AulaCalendarParser._parse_str(data.get("lessonId")),
@@ -80,14 +90,15 @@ class AulaCalendarParser(AulaParser):
 
     @staticmethod
     def parse_calendar_event_time_slot(data: AulaTimeSlotData  | None) -> AulaCalendarEventTimeSlot | None:
+        """The time slots of an event, None for no data."""
         if not data: return None
         result = AulaCalendarEventTimeSlot(
-            # child_required = AulaCalendarParser._parse_bool(data.get("childRequired")),
             time_slots = AulaCalendarParser.parse_calendar_event_time_slot_entries(data.get("timeSlots", [])),
         )
         return result
     @staticmethod
     def parse_calendar_event_time_slot_entry_index(data: AulaTimeSlotIndexData | None) -> AulaCalendarEventTimeSlotEntryIndex | None:
+        """A time to choose in a time slot, None for no data."""
         if not data: return None
         result = AulaCalendarEventTimeSlotEntryIndex(
             start_datetime = AulaCalendarParser._parse_datetime(data.get("startTime"), fix_timezone=False),
@@ -97,11 +108,13 @@ class AulaCalendarParser(AulaParser):
 
     @staticmethod
     def parse_calendar_event_time_slot_entry_indexes(data: List[AulaTimeSlotIndexData] | None) -> List[AulaCalendarEventTimeSlotEntryIndex]:
+        """The times to choose in a time slot, leaving out those with no data."""
         if data is None: return []
         return list_without_none(map(AulaCalendarParser.parse_calendar_event_time_slot_entry_index, data))
 
     @staticmethod
     def parse_calendar_event_time_slot_entry_answer(data: AulaAnswerData | None) -> AulaCalendarEventTimeSlotEntryAnswer | None:
+        """A time chosen in a time slot, None for no data."""
         if not data: return None
         result = AulaCalendarEventTimeSlotEntryAnswer(
             concerning_profile_id = AulaCalendarParser._parse_int(data.get("concerningProfileId")),
@@ -113,11 +126,13 @@ class AulaCalendarParser(AulaParser):
 
     @staticmethod
     def parse_calendar_event_time_slot_entry_answers(data: List[AulaAnswerData] | None) -> List[AulaCalendarEventTimeSlotEntryAnswer]:
+        """The times chosen in a time slot, leaving out those with no data."""
         if data is None: return []
         return list_without_none(map(AulaCalendarParser.parse_calendar_event_time_slot_entry_answer, data))
 
     @staticmethod
     def parse_calendar_event_time_slot_entry(data: AulaTimeSlotDetailData | None) -> AulaCalendarEventTimeSlotEntry | None:
+        """A time slot, None for no data."""
         if not data: return None
         result = AulaCalendarEventTimeSlotEntry(
             answers = AulaCalendarParser.parse_calendar_event_time_slot_entry_answers(data.get("answers", [])),
@@ -130,6 +145,7 @@ class AulaCalendarParser(AulaParser):
 
     @staticmethod
     def parse_calendar_event_time_slot_entries(data: List[AulaTimeSlotDetailData] | None) -> List[AulaCalendarEventTimeSlotEntry]:
+        """The time slots, leaving out those with no data."""
         if data is None: return []
         return list_without_none(map(AulaCalendarParser.parse_calendar_event_time_slot_entry, data))
 
@@ -137,5 +153,6 @@ class AulaCalendarParser(AulaParser):
 
     @staticmethod
     def parse_calendar_event_response(data: AulaGetEventsByProfileIdsAndResourceIdsResponse | None) -> List[AulaCalendarEvent]:
+        """The events of Aula's answer to calendar.getEventsByProfileIdsAndResourceIds."""
         if data is None: return []
         return AulaCalendarParser.parse_calendar_events(data["data"])
