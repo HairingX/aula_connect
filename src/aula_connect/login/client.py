@@ -23,6 +23,7 @@ from urllib.parse import parse_qs, urlparse, urljoin
 
 from bs4 import BeautifulSoup
 
+from ..redact import redact
 from .exceptions import (
     AulaAuthenticationError,
     MitIDError,
@@ -178,8 +179,7 @@ class AulaLoginClient:
         if not self.debug and level.upper() == "DEBUG":
             return
 
-        # Log the message
-        log_method(message)
+        log_method(redact(message))
 
     def generate_pkce_parameters(self) -> Tuple[str, str]:
         """Generate PKCE parameters for OAuth 2.0"""
