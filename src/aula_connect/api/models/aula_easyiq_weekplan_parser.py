@@ -1,3 +1,5 @@
+"""Reading EasyIQ's weekly plans into the models."""
+
 from collections import defaultdict
 from datetime import datetime, timedelta, date
 from hashlib import sha256
@@ -12,6 +14,7 @@ EASYIQ_DATETIME_FORMAT = "%Y/%m/%d %H:%M"
 
 
 class AulaEasyiqWeekplanParser(AulaParser):
+    """Reads EasyIQ's weekly plans."""
     @staticmethod
     def _stable_id(*parts: str) -> str:
         raw = "|".join(p or "" for p in parts)
@@ -19,6 +22,7 @@ class AulaEasyiqWeekplanParser(AulaParser):
 
     @staticmethod
     def parse_event(data: AulaEasyiqWeekplanEvent, child_user_id: str) -> AulaEasyiqEvent | None:
+        """An event of a weekly plan, with an id stable across reads; None where its times cannot be read."""
         start_str = data.get("start", "")
         end_str = data.get("end", "")
         try:
@@ -52,6 +56,7 @@ class AulaEasyiqWeekplanParser(AulaParser):
         child_user_id: str,
         from_date: date,
     ) -> AulaEasyiqWeeklyPlan:
+        """A child's weekly plan from the Monday `from_date`, its events grouped by day."""
         events_by_date: defaultdict[date, List[AulaEasyiqEvent]] = defaultdict(list)
 
         if data:

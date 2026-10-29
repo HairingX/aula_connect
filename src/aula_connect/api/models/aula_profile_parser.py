@@ -1,3 +1,5 @@
+"""Reading Aula's profiles, widgets and daily overviews into the models."""
+
 from typing import List
 from datetime import datetime, timedelta
 
@@ -12,8 +14,10 @@ from .aula_parser import AulaParser
 from .aula_profile_models import *
 
 class AulaProfileParser(AulaParser):
+    """Reads Aula's profiles, widgets and daily overviews."""
     @staticmethod
     def parse_profile(data: AulaProfileData | None) -> AulaProfile | None:
+        """The user's profile, None for no data."""
         if not data: return None
         result = AulaProfile(
             children = AulaProfileParser.parse_children(data.get("children")),
@@ -28,11 +32,13 @@ class AulaProfileParser(AulaParser):
 
     @staticmethod
     def parse_profiles(data: List[AulaProfileData] | None) -> List[AulaProfile]:
+        """The profiles, leaving out those with no data."""
         if data is None: return []
         return list_without_none(map(AulaProfileParser.parse_profile, data))
 
     @staticmethod
     def parse_picture(data: AulaProfilePictureData | None) -> AulaProfilePicture | None:
+        """A profile picture, None for no data."""
         if not data: return None
         result = AulaProfilePicture(
             bucket = AulaProfileParser._parse_nullable_str(data.get("bucket")),
@@ -45,6 +51,7 @@ class AulaProfileParser(AulaParser):
 
     @staticmethod
     def parse_child(data: AulaChildData | None) -> AulaChildProfile | None:
+        """A child, None for no data."""
         if not data: return None
         result = AulaChildProfile(
             first_name = (AulaProfileParser._parse_str(data.get("name")).split() or [""])[0],
@@ -62,11 +69,13 @@ class AulaProfileParser(AulaParser):
 
     @staticmethod
     def parse_children(data: List[AulaChildData] | None) -> List[AulaChildProfile]:
+        """The children, leaving out those with no data."""
         if not data: return []
         return list_without_none(map(AulaProfileParser.parse_child, data))
 
     @staticmethod
     def parse_institution(data: AulaInstitutionProfileData|AulaDailyOverviewInstitutionProfileData| None) -> AulaInstitutionProfile:
+        """An institution profile; raises ValueError for no data."""
         if not data: raise ValueError()
         result = AulaInstitutionProfile(
             id = AulaProfileParser._parse_int(data.get("id", 0)),
@@ -78,11 +87,13 @@ class AulaProfileParser(AulaParser):
 
     @staticmethod
     def parse_institutions(data: List[AulaInstitutionProfileData] | List[AulaDailyOverviewInstitutionProfileData] | None) -> List[AulaInstitutionProfile]:
+        """The institution profiles."""
         if data is None: return []
         return list_without_none(map(AulaProfileParser.parse_institution, data))
 
     @staticmethod
     def parse_widget(data: AulaProfileContextWidgetData) -> AulaWidget | None:
+        """A widget, None for no data."""
         if not data: return None
         result = AulaWidget(
             description = AulaProfileParser._parse_nullable_str(data.get("description")),
@@ -97,11 +108,13 @@ class AulaProfileParser(AulaParser):
 
     @staticmethod
     def parse_widgets(data: List[AulaProfileContextWidgetData] | None) -> List[AulaWidget]:
+        """The widgets, leaving out those with no data."""
         if data is None: return []
         return list_without_none(map(AulaProfileParser.parse_widget, data))
 
     @staticmethod
     def parse_location(data: AulaDailyOverviewLocationData | None) -> AulaLocation | None:
+        """Where a child is, its start and end from their dates and times; None for no data."""
         if not data: return None
 
         start_datetime: datetime|None = None
@@ -132,6 +145,7 @@ class AulaProfileParser(AulaParser):
 
     @staticmethod
     def parse_daily_overview(data: AulaDailyOverviewData | None) -> AulaDailyOverview | None:
+        """A child's daily overview, None for no data."""
         if not data: return None
         result = AulaDailyOverview(
             check_in_time = AulaProfileParser._parse_nullable_time(data.get("checkInTime"), fix_timezone=False),
@@ -153,6 +167,7 @@ class AulaProfileParser(AulaParser):
 
     @staticmethod
     def parse_institution_group(data: AulaProfileMasterDataInstitutionGroupData | None) -> AulaInstitutionGroup | None:
+        """A group, None for no data."""
         if not data: return None
         result = AulaInstitutionGroup(
             id = AulaProfileParser._parse_int(data.get("id")),
@@ -163,6 +178,7 @@ class AulaProfileParser(AulaParser):
 
     @staticmethod
     def parse_profile_relation(data: AulaProfileMasterDataRelationData | None) -> AulaProfileRelation | None:
+        """A child's main group, an empty group where it has none; None for no data."""
         if not data: return None
         inst_group = AulaProfileParser.parse_institution_group(data.get("mainGroup"))
         result = AulaProfileRelation(
@@ -173,16 +189,19 @@ class AulaProfileParser(AulaParser):
 
     @staticmethod
     def parse_daily_overviews(data: List[AulaDailyOverviewData] | None) -> List[AulaDailyOverview]:
+        """The daily overviews, leaving out those with no data."""
         if data is None: return []
         return list_without_none(map(AulaProfileParser.parse_daily_overview, data))
 
     @staticmethod
     def parse_daily_overview_response(data: AulaGetDailyOverviewResponse | None) -> List[AulaDailyOverview]:
+        """The daily overviews of Aula's answer to presence.getDailyOverview."""
         if data is None: return []
         return AulaProfileParser.parse_daily_overviews(data["data"])
 
     @staticmethod
     def parse_profiles_response(data: AulaGetProfilesByLoginResponse | None) -> List[AulaProfile]:
+        """The profiles of Aula's answer to profiles.getProfilesByLogin."""
         if not data: return []
         d = data.get("data")
         if not d: return []
@@ -190,6 +209,7 @@ class AulaProfileParser(AulaParser):
 
     @staticmethod
     def parse_profile_master_data_response(data: AulaGetProfileMasterDataResponse | None) -> List[AulaProfileRelation]:
+        """The children's main groups of Aula's answer to profiles.getProfileMasterData."""
         if not data: return []
         d = data.get("data")
         if not d: return []

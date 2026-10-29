@@ -1,3 +1,4 @@
+"""Aula's API client and the models it reads into."""
 
 from .models.module import (
     AulaBirthdayEvent,

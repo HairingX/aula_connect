@@ -1,30 +1,24 @@
+"""The widgets, the kinds of calendar events and plan tasks, their icons, and the labels shown to users."""
+
 from enum import StrEnum
 
 
 class AulaWidgetId(StrEnum):
+    """The widgets an institution can have, by Aula's id."""
     EASYIQ_WEEKPLAN = "0001"
     """0001 - Week plan posted on easyiqcloud.dk/api/aula."""
-    # MEEBOOK_PARENTS = "0003"
-    # """0003 - Books the students/children will work with in the current week."""
     WEEKPLAN_PARENTS = "0004"
     """0004 - Week plan for each student/child."""
-    # USEFUL_LINKS = "0013"
-    # """0013 - Useful links for the user.."""
     MY_EDUCATION_WEEKLETTER = "0029"
     """0029 - Weekletter posted on minuddannelse.net/aula."""
     MY_EDUCATION_ASSIGNMENTS = "0030"
     """0030 - Assignments posted on minuddannelse.net/aula."""
-    # BRAIN_AND_HEART_SCHOOL = "0040"
-    # """0040 - Employees can be sent directly to the homepage (via the Aula homepage) or the class list (via the class group in Aula) to Brain&Heart School."""
-    # ABSENCE_PARENT_REPORTING = "0047"
-    # """0047 - Absence helps you see your children's absences and allows you to report them sick."""
     REMINDERS = "0062"
     """0062 - Reminders posted on systematic-momo.dk/api/aula"""
-    # MEEBOOK_OVERVIEW = "0119"
-    # """0119 - Notifications from Meebook for parents in Aula. The widget also contains quicklinks for navigation to Meebook from Aula."""
 
 
 class AulaCalendarEventType(StrEnum):
+    """The kinds of calendar events."""
     EVENT = 'event'
     LESSON = 'lesson'
     HOLIDAY = 'holiday'
@@ -54,6 +48,7 @@ CALENDAR_EVENT_ICON: dict[str, str] = {
 
 
 class AulaWeeklyPlanTaskType(StrEnum):
+    """The kinds of tasks in a weekly plan."""
     TASK = "task"
     COMMENT = "comment"
 
@@ -64,10 +59,7 @@ WEEKLY_PLAN_TASK_ICON: dict[str, str] = {
 }
 
 
-# --- UI Labels ---
-# All user-facing text in one place.
-# To add a new language: add a new key to _LABELS and set DEFAULT_LANGUAGE.
-# On config flow integration, DEFAULT_LANGUAGE can be replaced by a config entry option.
+# The labels shown to users, by language; Danish where a language has none.
 
 _language = "da"
 

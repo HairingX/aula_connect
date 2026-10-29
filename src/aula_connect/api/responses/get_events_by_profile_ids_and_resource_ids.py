@@ -1,3 +1,5 @@
+"""Aula's answer to calendar.getEventsByProfileIdsAndResourceIds."""
+
 import datetime
 from typing import List, TypedDict
 from typing import List
@@ -7,16 +9,19 @@ from typing_extensions import NotRequired
 from .common_data import AulaStatusData
 
 class AulaAnswerData(TypedDict):
+    """A time chosen in a time slot."""
     concerningProfileId: int
     id: int
     instProfileId: int
     selectedTimeSlotIndex: int
 
 class AulaTimeSlotIndexData(TypedDict):
+    """A time to choose in a time slot."""
     endTime: datetime
     startTime: datetime
 
 class AulaTimeSlotDetailData(TypedDict):
+    """A time slot."""
     answers: List[AulaAnswerData]
     endDate: datetime
     id: int
@@ -24,25 +29,30 @@ class AulaTimeSlotDetailData(TypedDict):
     timeSlotIndexes: List[AulaTimeSlotIndexData]
 
 class AulaTimeSlotData(TypedDict):
-    # childRequired: bool # this field seems to be obsolete, the website does not use it, it analyzes the timeSlots array instead
+    """The time slots of an event."""
+    # childRequired is left out: Aula's website reads the time slots instead.
     timeSlots: List[AulaTimeSlotDetailData]
 
 class AulaLessonParticipantData(TypedDict):
+    """A teacher of a lesson."""
     participantRole: str
     teacherId: int
     teacherInitials: str
     teacherName: str
 
 class AulaLessonData(TypedDict):
+    """The lesson an event is."""
     lessonId: str
     lessonStatus: str
     participants: List[AulaLessonParticipantData]
 
 class AulaPrimaryResourceData(TypedDict):
+    """The resource an event uses, such as a room."""
     id: int
     name: str
 
 class AulaEventData(TypedDict):
+    """A calendar event."""
     allDay: bool
     belongsToProfiles: List[int]
     createdDateTime: datetime
@@ -62,6 +72,7 @@ class AulaEventData(TypedDict):
     type: str
 
 class AulaGetEventsByProfileIdsAndResourceIdsResponse(TypedDict):
+    """The answer, with the events."""
     data: List[AulaEventData]
     status: AulaStatusData
     version: int

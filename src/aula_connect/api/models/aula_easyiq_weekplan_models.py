@@ -1,3 +1,5 @@
+"""The weekly plans of EasyIQ."""
+
 from dataclasses import dataclass
 import datetime
 from typing import List
@@ -26,12 +28,14 @@ class AulaEasyiqEvent:
 
 @dataclass
 class AulaEasyiqDailyPlan:
+    """A day of a child's EasyIQ weekly plan."""
     date: datetime.date
     events: List[AulaEasyiqEvent]
 
 
 @dataclass
 class AulaEasyiqWeeklyPlan:
+    """A child's EasyIQ weekly plan, by day."""
     name: str
     from_date: datetime.date
     to_date: datetime.date

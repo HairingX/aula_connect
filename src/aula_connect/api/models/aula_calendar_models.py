@@ -1,14 +1,18 @@
+"""The events of Aula's calendar."""
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, List, Optional
 
 @dataclass
 class AulaCalendarEventTimeSlotEntryIndex:
+    """One time a guardian can choose in a time slot."""
     end_datetime: datetime
     start_datetime: datetime
 
 @dataclass
 class AulaCalendarEventTimeSlotEntryAnswer:
+    """The time a guardian chose in a time slot."""
     concerning_profile_id: int
     id: int
     inst_profile_id: int
@@ -16,6 +20,7 @@ class AulaCalendarEventTimeSlotEntryAnswer:
 
 @dataclass
 class AulaCalendarEventTimeSlotEntry:
+    """A time slot of an event, with its times and the answers given."""
     answers: List[AulaCalendarEventTimeSlotEntryAnswer]
     end_date: datetime
     id: int
@@ -24,8 +29,8 @@ class AulaCalendarEventTimeSlotEntry:
 
 @dataclass
 class AulaCalendarEventTimeSlot:
-    # child_required: bool
-    # """This property is not used in Aula website 2024, they use the CalendarEvent.belongs_to_profiles and check if the kids institutionid is in that"""
+    """The time slots of an event guardians book a time in, such as a parents' meeting."""
+    # Aula's childRequired is left out: its website reads belongs_to_profiles instead.
     time_slots: List[AulaCalendarEventTimeSlotEntry]
 
 @dataclass

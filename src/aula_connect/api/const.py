@@ -1,3 +1,5 @@
+"""Where Aula's API and its widgets' are, and the API version expected."""
+
 API = "https://www.aula.dk/api/v"
 API_VERSION = "23"
 MIN_UDDANNELSE_API = "https://api.minuddannelse.net/aula"

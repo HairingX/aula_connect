@@ -1,3 +1,5 @@
+"""The weekly plans of Meebook."""
+
 from dataclasses import dataclass
 import datetime
 from typing import List, Optional
@@ -28,11 +30,13 @@ class AulaDailyPlanTask:
 
 @dataclass
 class AulaDailyPlan:
+    """A day of a child's Meebook weekly plan."""
     date: datetime.date
     tasks: List[AulaDailyPlanTask]
 
 @dataclass
 class AulaWeeklyPlan:
+    """A child's Meebook weekly plan, by day."""
     from_date: datetime.date
     name: str
     to_date: datetime.date

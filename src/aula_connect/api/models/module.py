@@ -1,3 +1,5 @@
+"""The models of Aula's data, and the parsers that read them from Aula's answers."""
+
 from .constants import AulaCalendarEventType
 
 from .aula_birthday_parser import AulaBirthdayParser

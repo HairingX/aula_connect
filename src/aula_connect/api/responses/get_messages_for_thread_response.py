@@ -1,9 +1,12 @@
+"""Aula's answer to messaging.getMessagesForThread."""
+
 from typing import NotRequired, TypedDict, List
 
 from .common_data import AulaStatusData
 from .get_message_threads_response import AulaThreadRecipientData, AulaMessageTextData
 
 class AulaMessageData(TypedDict):
+    """A message."""
     canReplyToMessage: bool
     hasAttachments: bool
     id: str
@@ -13,6 +16,7 @@ class AulaMessageData(TypedDict):
     text: NotRequired[AulaMessageTextData|None]
 
 class AulaMessagesForThreadData(TypedDict):
+    """A page of a thread's messages."""
     extraRecipientsCount: NotRequired[int|None]
     hasSecureDocuments: bool
     id: int
@@ -32,6 +36,7 @@ class AulaMessagesForThreadData(TypedDict):
     totalMessageCount: int
 
 class AulaGetMessagesForThreadResponse(TypedDict):
+    """The answer, with a page of messages."""
     data: AulaMessagesForThreadData
     status: AulaStatusData
     version: int

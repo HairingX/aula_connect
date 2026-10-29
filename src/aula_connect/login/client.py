@@ -1,116 +1,150 @@
-"""
-Aula Login Client - Main authentication client for Aula platform with MitID integration.
+"""The login to Aula through MitID: Aula's OAuth 2.0 with PKCE, through UniLogin's broker and
+NemLog-in to MitID and back, ending in Aula's access and refresh tokens."""
 
-This module contains the main AulaLoginClient class that handles the complete
-authentication flow including OAuth 2.0/OIDC, SAML, and MitID authentication.
-"""
+from __future__ import annotations
 
-import requests
-import urllib.parse
 import base64
-import hashlib
-import secrets
-import re
-import json
-import time
 import binascii
-import uuid
-import os
+import hashlib
+import inspect
+import json
 import logging
-from pathlib import Path
-from typing import Dict, Optional, Tuple
-from urllib.parse import parse_qs, urlparse, urljoin
+import secrets
+import time
+import urllib.parse
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any, TypedDict, cast
+from urllib.parse import parse_qs, urljoin, urlparse
 
-from bs4 import BeautifulSoup
+import aiohttp
+from bs4 import BeautifulSoup, Tag
+from mitid_connect import BrowserClient
+from mitid_connect.browser_client import MITID_URL
 
+from ..http import REDIRECTS, HttpResponse, HttpSession
 from ..redact import redact
 from .exceptions import (
     AulaAuthenticationError,
     MitIDError,
-    TokenExpiredError,
-    APIError,
-    ConfigurationError,
     NetworkError,
-    SAMLError,
     OAuthError,
+    SAMLError,
+    TokenExpiredError,
 )
 
-try:
-    from mitid_connect import BrowserClient
+if TYPE_CHECKING:
+    import qrcode
 
-    MITID_AVAILABLE = True
-except ImportError as e:
-    MITID_AVAILABLE = False
+BROWSER_HEADERS = {
+    # The Aula app's own browser, as its traffic shows.
+    "User-Agent": "Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Mobile Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Upgrade-Insecure-Requests": "1",
+    "sec-ch-ua": '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
+    "sec-ch-ua-mobile": "?1",
+    "sec-ch-ua-platform": '"Android"',
+}
+"""Headers sent with every request of the login."""
+
+MAX_REDIRECTS = 10
+"""The most redirects a step of the login follows before it gives up."""
+
+IdentitySelector = Callable[[list[str]], str | int | Awaitable[str | int]]
+"""Chooses one of the MitID identities named, by its number counted from 1."""
 
 
+class MitIDPage(TypedDict):
+    """NemLog-in's MitID page, reached through Aula and UniLogin."""
+
+    verification_token: str
+    mitid_url: str
+    session_cookies: dict[str, str]
 
 
-def _oauth_error(response: requests.Response) -> str | None:
+class SamlResponse(TypedDict):
+    """The SAML response NemLog-in hands on to UniLogin's broker."""
+
+    relay_state: str
+    saml_response: str
+    completion_url: str
+
+
+class BrokerSamlResponse(TypedDict):
+    """The SAML response UniLogin's broker hands on to Aula, and where to."""
+
+    final_saml_response: str
+    final_relay_state: str
+    form_action: str
+
+
+def _oauth_error(response: HttpResponse) -> str | None:
     """The OAuth 2.0 error code of an error response, None if it has none."""
     try:
         body = response.json()
     except ValueError:
         return None
-    error = body.get("error") if isinstance(body, dict) else None
+    error = cast(dict[str, object], body).get("error") if isinstance(body, dict) else None
     return error if isinstance(error, str) else None
 
+
+def _tag(found: object) -> Tag | None:
+    """The element found, None where nothing or only text was."""
+    return found if isinstance(found, Tag) else None
+
+
+def _attribute(tag: Tag | None, name: str) -> str:
+    """The value of the attribute `name`, empty where the element or the attribute is missing."""
+    value = tag.get(name) if tag is not None else None
+    if value is None:
+        return ""
+    return value if isinstance(value, str) else " ".join(value)
+
+
+def _form_fields(form: Tag) -> dict[str, str]:
+    """The named inputs of a form, with their values."""
+    fields: dict[str, str] = {}
+    for field in form.find_all("input"):
+        name = _attribute(_tag(field), "name")
+        if name:
+            fields[name] = _attribute(_tag(field), "value")
+    return fields
+
+
 class AulaLoginClient:
-    """
-    Main client for Aula platform authentication with MitID integration.
-
-    This class handles the complete OAuth 2.0/OIDC + SAML + MitID authentication flow
-    that the Aula mobile application uses, including automated MitID authentication.
-
-    Features:
-    - Full authentication flow automation
-    - Token management and renewal
-    - API access testing
-    - Proxy support
-    - Comprehensive error handling
+    """A login to Aula through MitID, with the MitID app or a code token, and its tokens.
 
     Example:
-        client = AulaLoginClient(
-            mitid_username="your_username",
-            auth_method="APP"
-        )
-
-        result = client.authenticate()
-        if result['success']:
-            tokens = result['tokens']
+        client = AulaLoginClient(session, mitid_username="username")
+        result = await client.authenticate()
+        tokens = result["tokens"]
     """
 
     def __init__(
         self,
+        session: aiohttp.ClientSession,
         mitid_username: str,
-        mitid_password: Optional[str] = None,
-        mitid_token: Optional[str] = None,
+        mitid_password: str | None = None,
+        mitid_token: str | None = None,
         auth_method: str = "APP",
-        proxy: Optional[str] = None,
         timeout: int = 30,
         debug: bool = False,
         verbose: bool = False,
-    ):
-        """
-        Initialize the Aula login client.
+    ) -> None:
+        """Prepare a login, sending nothing yet.
 
         Args:
-            mitid_username: Your MitID username
-            mitid_password: Your MitID password (for TOKEN method)
-            auth_method: "APP" for MitID app, "TOKEN" for code token
-            proxy: Optional SOCKS5 proxy (format: "host:port")
-            timeout: Request timeout in seconds
-            debug: Enable debug logging
-            verbose: Enable verbose output (default: False)
-
-        Raises:
-            ConfigurationError: If MitID BrowserClient is not available
+            session: The aiohttp session to log in on. Its cookies are the login's, so it is
+                one for this login alone.
+            mitid_username: The MitID user ID.
+            mitid_password: The MitID password, for the code token.
+            mitid_token: The code token's current digits.
+            auth_method: "APP" for the MitID app, "TOKEN" for the code token and password.
+            timeout: Seconds a single request may take.
+            debug: Log the login's steps in detail too, when verbose.
+            verbose: Log the login's steps, not only its warnings and errors.
         """
-        if not MITID_AVAILABLE:
-            raise ConfigurationError(
-                "MitID BrowserClient not found. Please install: pip install mitid-browserclient"
-            )
-
-        self.session = requests.Session()
+        self.session = HttpSession(session, BROWSER_HEADERS, timeout)
         self.mitid_username = mitid_username
         self.mitid_password = mitid_password
         self.mitid_token = mitid_token
@@ -118,465 +152,275 @@ class AulaLoginClient:
         self.timeout = timeout
         self.debug = debug
         self.verbose = verbose
-
-        # Initialize logger for Home Assistant integration
         self.logger = logging.getLogger(__name__)
 
-        # Configure proxy if provided
-        if proxy:
-            self.session.proxies.update(
-                {"http": f"socks5://{proxy}", "https": f"socks5://{proxy}"}
-            )
-
-        # Mobile app user agent from MITM flows
-        self.session.headers.update(
-            {
-                "User-Agent": "Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Mobile Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Upgrade-Insecure-Requests": "1",
-                "sec-ch-ua": '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
-                "sec-ch-ua-mobile": "?1",
-                "sec-ch-ua-platform": '"Android"',
-            }
-        )
-
-        # URLs from MITM analysis
         self.auth_base_url = "https://login.aula.dk"
         self.broker_url = "https://broker.unilogin.dk"
+        self.nemlogin_url = "https://nemlog-in.mitid.dk"
+        self.mitid_url = MITID_URL
         self.app_redirect_uri = "https://app-private.aula.dk"
-        self.app_api_base = "https://app-private.aula.dk/api/v22"
-
-        # OAuth configuration from source code
         self.client_id_level_3 = "_99949a54b8b65423862aac1bf629599ed64231607a"
         self.scope = "aula-sensitive"
 
-        # Session state
-        self.code_verifier = None
-        self.code_challenge = None
-        self.state = None
-        self.tokens = None
-        self.mitid_client = None  # Store MitID client for QR code access
+        self.identity_selector: IdentitySelector | None = None
+        """Chooses between several MitID identities; without one, the first is taken."""
+        self.available_identities: list[str] = []
+        """The identities MitID offered to choose between, in the last login."""
 
-    def log(self, message: str, level: str = "INFO"):
-        """Enhanced logging using Home Assistant logging system"""
-        # Map string level to logging methods
-        level_map = {
-            "DEBUG": self.logger.debug,
-            "INFO": self.logger.info,
-            "WARN": self.logger.warning,
-            "WARNING": self.logger.warning,
-            "ERROR": self.logger.error,
-        }
+        self.code_verifier = ""
+        self.code_challenge = ""
+        self.state = ""
+        self.tokens: dict[str, Any] | None = None
+        """The tokens of the last login or renewal, with `expires_at` in seconds since the epoch."""
+        self.mitid_client: BrowserClient | None = None
+        """The MitID login while it runs."""
 
-        # Get the appropriate logging method
-        log_method = level_map.get(level.upper(), self.logger.info)
+    def _cookie_header(self, domain: str | None = None) -> dict[str, str]:
+        """The session's cookies as a header - those of `domain` and those of no domain, where one is given."""
+        cookies = [
+            f"{cookie.name}={cookie.value}"
+            for cookie in self.session.cookies
+            if domain is None or domain in cookie.domain or cookie.domain == ""
+        ]
+        return {"cookie": "; ".join(cookies)} if cookies else {}
 
-        # Apply verbose/debug filtering
-        if not self.verbose and level.upper() in ["DEBUG", "INFO"]:
+    def log(self, message: str, level: str = "INFO") -> None:
+        """Log `message` with its secrets taken out; DEBUG and INFO only when verbose, DEBUG only when debugging too."""
+        level = level.upper()
+        if level in ("DEBUG", "INFO") and not self.verbose:
             return
-        if not self.debug and level.upper() == "DEBUG":
+        if level == "DEBUG" and not self.debug:
             return
+        self.logger.log(logging.getLevelNamesMapping().get(level, logging.INFO), redact(message))
 
-        log_method(redact(message))
-
-    def generate_pkce_parameters(self) -> Tuple[str, str]:
-        """Generate PKCE parameters for OAuth 2.0"""
-        code_verifier = (
-            base64.urlsafe_b64encode(secrets.token_bytes(32))
-            .decode("utf-8")
-            .rstrip("=")
-        )
+    def generate_pkce_parameters(self) -> tuple[str, str]:
+        """A new PKCE code verifier and its S256 code challenge."""
+        code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("utf-8").rstrip("=")
         challenge = hashlib.sha256(code_verifier.encode("utf-8")).digest()
         code_challenge = base64.urlsafe_b64encode(challenge).decode("utf-8").rstrip("=")
         return code_verifier, code_challenge
 
     def generate_state(self) -> str:
-        """Generate OAuth state parameter"""
-        return (
-            base64.urlsafe_b64encode(secrets.token_bytes(16))
-            .decode("utf-8")
-            .rstrip("=")
-        )
+        """A new OAuth state."""
+        return base64.urlsafe_b64encode(secrets.token_bytes(16)).decode("utf-8").rstrip("=")
 
-    def step1_start_oauth_flow(self) -> str:
-        """Step 1: Start OAuth authorization flow"""
+    async def step1_start_oauth_flow(self) -> str:
+        """Start Aula's OAuth authorization, and give the URL it sends the login on to.
+
+        Raises:
+            OAuthError: Aula sent the login nowhere.
+            NetworkError: Aula could not be reached.
+        """
         self.log("Starting OAuth 2.0 authorization flow")
-
+        self.code_verifier, self.code_challenge = self.generate_pkce_parameters()
+        self.state = self.generate_state()
+        auth_params = {
+            "response_type": "code",
+            "client_id": self.client_id_level_3,
+            "scope": self.scope,
+            "redirect_uri": self.app_redirect_uri,
+            "state": self.state,
+            "code_challenge": self.code_challenge,
+            "code_challenge_method": "S256",
+        }
+        url = f"{self.auth_base_url}/simplesaml/module.php/oidc/authorize.php?{urllib.parse.urlencode(auth_params)}"
         try:
-            # Generate PKCE parameters
-            self.code_verifier, self.code_challenge = self.generate_pkce_parameters()
-            self.state = self.generate_state()
+            response = await self.session.get(url, allow_redirects=False)
+        except (aiohttp.ClientError, TimeoutError) as e:
+            raise NetworkError(f"Network error during OAuth flow: {redact(e)}") from e
+        self.log(f"OAuth authorization response: {response.status_code}", "DEBUG")
 
-            # Build authorization URL
-            auth_params = {
-                "response_type": "code",
-                "client_id": self.client_id_level_3,
-                "scope": self.scope,
-                "redirect_uri": self.app_redirect_uri,
-                "state": self.state,
-                "code_challenge": self.code_challenge,
-                "code_challenge_method": "S256",
-            }
-
-            auth_url = f"{self.auth_base_url}/simplesaml/module.php/oidc/authorize.php"
-            full_auth_url = f"{auth_url}?{urllib.parse.urlencode(auth_params)}"
-
-            self.log(
-                "Authorization URL generated, now visiting it to start the flow {full_auth_url}"
-            )
-
-            # Actually visit the OAuth authorization URL - this should redirect to SAML
-            oauth_response = self.session.get(
-                full_auth_url, allow_redirects=False, timeout=self.timeout
-            )
-            self.log(f"OAuth authorization response: {oauth_response.status_code}", "DEBUG")
-
-            if oauth_response.status_code in [301, 302, 303, 307, 308]:
-                # Follow the redirect to SAML
-                redirect_url = oauth_response.headers.get("Location")
-                self.log(f"OAuth redirecting to: {redirect_url[:100]}...")
-                return redirect_url
-            elif oauth_response.status_code == 200:
-                # Check if this page contains a SAML form or redirect
-                soup = BeautifulSoup(oauth_response.text, "html.parser")
-
-                # Look for SAML form
-                saml_form = soup.find("form")
-                if saml_form and saml_form.get("action"):
-                    action = saml_form.get("action")
-                    self.log(f"Found SAML form with action: {action}")
-                    return action
-
-                # Look for meta refresh or JavaScript redirect
-                meta_refresh = soup.find("meta", {"http-equiv": "refresh"})
-                if meta_refresh:
-                    content = meta_refresh.get("content", "")
-                    if "url=" in content.lower():
-                        url = content.split("url=", 1)[1]
-                        self.log(f"Found meta refresh redirect: {url}")
-                        return url
-
-                raise OAuthError(
-                    "OAuth authorization endpoint returned 200 but no redirect found"
-                )
-            else:
-                raise OAuthError(
-                    f"Unexpected OAuth authorization response: {oauth_response.status_code}"
-                )
-
-        except requests.RequestException as e:
-            raise NetworkError(f"Network error during OAuth flow: {str(e)}")
-
-    def step3_follow_redirect_chain(self, start_url: str) -> Dict:
-        """Step 3: Follow the redirect chain to MitID"""
-        self.log("Following redirect chain to MitID")
-
-        current_url = start_url
-        redirect_count = 0
-        max_redirects = 10
-
-        try:
-            while redirect_count < max_redirects:
-                response = self.session.get(
-                    current_url, allow_redirects=False, timeout=self.timeout
-                )
-                self.log(
-                    f"Redirect {redirect_count + 1}: {response.status_code} -> {current_url[:80]}..."
-                )
-
-                if response.status_code == 200:
-                    # We've reached a page that needs interaction
-                    soup = BeautifulSoup(response.text, "html.parser")
-
-                    # Check what kind of page this is
-                    if "broker.unilogin.dk" in response.url:
-                        self.log("Reached UniLogin broker - looking for IdP selection")
-                        return self._handle_broker_page(soup, response)
-
-                    elif "mitid.dk" in response.url or "nemlog-in" in response.url:
-                        self.log("Reached MitID page")
-
-                        # Extract verification token
-                        token_input = soup.find(
-                            "input", {"name": "__RequestVerificationToken"}
-                        )
-                        if not token_input:
-                            raise SAMLError(
-                                "Could not find RequestVerificationToken on MitID page"
-                            )
-
-                        verification_token = token_input["value"]
-                        self.log(f"Found RequestVerificationToken")
-
-                        return {
-                            "verification_token": verification_token,
-                            "mitid_url": response.url,
-                            "session_cookies": dict(self.session.cookies),
-                        }
-
-                    else:
-                        raise SAMLError(f"Unexpected page reached: {response.url}")
-
-                elif response.status_code in [301, 302, 303, 307, 308]:
-                    if "Location" not in response.headers:
-                        raise SAMLError(f"Redirect response missing Location header")
-
-                    current_url = urljoin(current_url, response.headers["Location"])
-                    redirect_count += 1
-
-                else:
-                    raise SAMLError(f"Unexpected status code: {response.status_code}")
-
-            raise SAMLError(f"Too many redirects ({max_redirects})")
-
-        except requests.RequestException as e:
-            raise NetworkError(f"Network error during redirect chain: {str(e)}")
-
-    def _handle_broker_page(self, soup, response) -> Dict:
-        """Handle the broker page for IdP selection"""
-        # Look for MitID/NemLogin selection form or button
-        forms = soup.find_all("form")
-        self.log(f"Found {len(forms)} forms on the page")
-
-        # Try standard form submission for NemLogin/MitID
-        main_form = soup.find("form")
-        if main_form:
-            action = main_form.get("action", "")
+        if response.status_code in REDIRECTS and "Location" in response.headers:
+            return response.headers["Location"]
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "html.parser")
+            action = _attribute(_tag(soup.find("form")), "action")
             if action:
-                self.log(f"Submitting form to: {action}")
+                return action
+            refresh = _attribute(_tag(soup.find("meta", {"http-equiv": "refresh"})), "content")
+            if "url=" in refresh.lower():
+                return refresh[refresh.lower().index("url=") + 4 :]
+            raise OAuthError("OAuth authorization endpoint returned 200 but no redirect found")
+        raise OAuthError(f"Unexpected OAuth authorization response: {response.status_code}")
 
-                # Common patterns for MitID selection
-                form_data = {}
+    async def step3_follow_redirect_chain(self, start_url: str) -> MitIDPage:
+        """Follow Aula's redirects through UniLogin's broker to NemLog-in's MitID page.
 
-                # Try various common parameter names for IdP selection
-                idp_selectors = ["selectedIdp", "idp", "authMethod", "provider"]
-                idp_values = ["nemlogin3", "mitid", "MitID", "nemlogin"]
+        Raises:
+            SAMLError: The chain ended anywhere else.
+            NetworkError: A step could not be reached.
+        """
+        self.log("Following redirect chain to MitID")
+        current_url = start_url
+        try:
+            for _ in range(MAX_REDIRECTS):
+                response = await self.session.get(current_url, allow_redirects=False)
+                if response.status_code in REDIRECTS:
+                    if "Location" not in response.headers:
+                        raise SAMLError("Redirect response missing Location header")
+                    current_url = urljoin(current_url, response.headers["Location"])
+                    continue
+                if response.status_code != 200:
+                    raise SAMLError(f"Unexpected status code: {response.status_code}")
+                soup = BeautifulSoup(response.text, "html.parser")
+                if "broker.unilogin.dk" in response.url or response.url.startswith(self.broker_url):
+                    self.log("Reached UniLogin broker - looking for IdP selection")
+                    return await self._handle_broker_page(soup)
+                if "mitid.dk" in response.url or "nemlog-in" in response.url or response.url.startswith(self.nemlogin_url):
+                    token_input = _tag(soup.find("input", {"name": "__RequestVerificationToken"}))
+                    if token_input is None:
+                        raise SAMLError("Could not find RequestVerificationToken on MitID page")
+                    return {
+                        "verification_token": _attribute(token_input, "value"),
+                        "mitid_url": response.url,
+                        "session_cookies": self.session.cookies.get_dict(),
+                    }
+                raise SAMLError(f"Unexpected page reached: {redact(response.url)}")
+        except (aiohttp.ClientError, TimeoutError) as e:
+            raise NetworkError(f"Network error during redirect chain: {redact(e)}") from e
+        raise SAMLError(f"Too many redirects ({MAX_REDIRECTS})")
 
-                # Look for existing hidden inputs
-                for inp in main_form.find_all("input"):
-                    name = inp.get("name")
-                    value = inp.get("value", "")
-                    if name:
-                        form_data[name] = value
+    async def _handle_broker_page(self, soup: BeautifulSoup) -> MitIDPage:
+        """Choose NemLog-in on UniLogin's page of identity providers, and go on to MitID."""
+        form = _tag(soup.find("form"))
+        action = _attribute(form, "action")
+        if form is None or not action:
+            raise SAMLError("No usable form found on broker page")
+        fields = _form_fields(form)
+        # The broker has named its choice of identity provider differently over time.
+        for selector in ("selectedIdp", "idp", "authMethod", "provider"):
+            for value in ("nemlogin3", "mitid", "MitID", "nemlogin"):
+                response = await self.session.post(action, data={**fields, selector: value}, allow_redirects=False)
+                if response.status_code in REDIRECTS and "Location" in response.headers:
+                    return await self.step3_follow_redirect_chain(response.headers["Location"])
+        raise SAMLError("Could not find working IdP selection method")
 
-                # Try to set IdP selection
-                for selector in idp_selectors:
-                    for value in idp_values:
-                        test_data = form_data.copy()
-                        test_data[selector] = value
+    async def step4_mitid_authentication(self, verification_token: str) -> str:
+        """Log in to MitID, and give the authorization code it ends with.
 
-                        self.log(f"Trying form submission with {selector}={value}")
-
-                        post_response = self.session.post(
-                            action,
-                            data=test_data,
-                            allow_redirects=False,
-                            timeout=self.timeout,
-                        )
-                        self.log(f"Form submission result: {post_response.status_code}", "DEBUG")
-
-                        if post_response.status_code in [301, 302, 303, 307, 308]:
-                            if "Location" in post_response.headers:
-                                current_url = post_response.headers["Location"]
-                                self.log(
-                                    f"Form submission redirected to: {current_url[:100]}..."
-                                )
-                                # Continue following redirects from this new URL
-                                return self.step3_follow_redirect_chain(current_url)
-
-                raise SAMLError("Could not find working IdP selection method")
-
-        raise SAMLError("No usable form found on broker page")
-
-    def step4_mitid_authentication(self, verification_token: str) -> str:
-        """Step 4: Perform MitID authentication"""
+        Raises:
+            MitIDError: MitID refused the login, or NemLog-in did not start it.
+            NetworkError: NemLog-in could not be reached.
+        """
         self.log(f"Starting MitID authentication (method: {self.auth_method})")
-
+        headers = {
+            "accept": "*/*",
+            "accept-language": "en-US,en;q=0.9,da;q=0.8",
+            "cache-control": "no-cache",
+            "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "origin": self.nemlogin_url,
+            "pragma": "no-cache",
+            "referer": f"{self.nemlogin_url}/login/mitid",
+            "x-requested-with": "XMLHttpRequest",
+        }
         try:
-            # Initialize MitID authentication
-            post_url = "https://nemlog-in.mitid.dk/login/mitid/initialize"
-            post_headers = {
-                "accept": "*/*",
-                "accept-encoding": "gzip, deflate, br, zstd",
-                "accept-language": "en-US,en;q=0.9,da;q=0.8",
-                "cache-control": "no-cache",
-                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "origin": "https://nemlog-in.mitid.dk",
-                "pragma": "no-cache",
-                "referer": "https://nemlog-in.mitid.dk/login/mitid",
-                "x-requested-with": "XMLHttpRequest",
-            }
-
-            post_data = {"__RequestVerificationToken": verification_token}
-
-            resp_init = self.session.post(
-                post_url, headers=post_headers, data=post_data, timeout=self.timeout
+            response = await self.session.post(
+                f"{self.nemlogin_url}/login/mitid/initialize",
+                headers=headers,
+                data={"__RequestVerificationToken": verification_token},
             )
-            resp_init_json = resp_init.json()
-
-            if isinstance(resp_init_json, str):
-                resp_init_json = json.loads(resp_init_json)
-
-            aux_value = resp_init_json.get("Aux")
-            if not aux_value:
+            initialization: object = response.json()
+            # NemLog-in answers with the JSON object as a JSON string.
+            if isinstance(initialization, str):
+                initialization = json.loads(initialization)
+            aux_value = cast(dict[str, object], initialization).get("Aux") if isinstance(initialization, dict) else None
+            if not isinstance(aux_value, str) or not aux_value:
                 raise MitIDError("No Aux value in MitID initialization response")
-
             aux = json.loads(base64.b64decode(aux_value).decode())
+        except (aiohttp.ClientError, TimeoutError) as e:
+            raise NetworkError(f"Network error during MitID authentication: {redact(e)}") from e
+        except (ValueError, binascii.Error) as e:
+            raise MitIDError(f"Invalid MitID response format: {e}") from e
 
-            # Use MitID BrowserClient for authentication
-            authorization_code = self._get_mitid_authentication_code(aux)
-            self.log(f"MitID authentication code obtained")
+        authorization_code = await self._get_mitid_authentication_code(aux)
+        self.log("MitID authentication code obtained")
+        self.mitid_client = None
+        return authorization_code
 
-            # Clear MitID client to prevent QR codes from showing up again in UI
-            self.mitid_client = None
-
-            return authorization_code
-
-        except requests.RequestException as e:
-            raise NetworkError(f"Network error during MitID authentication: {str(e)}")
-        except (json.JSONDecodeError, KeyError) as e:
-            raise MitIDError(f"Invalid MitID response format: {str(e)}")
-
-    def _get_mitid_authentication_code(self, aux: Dict) -> str:
-        """Use MitID BrowserClient to get authentication code"""
+    async def _get_mitid_authentication_code(self, aux: Any) -> str:
+        """Run the MitID login NemLog-in started with `aux`, and give its authorization code."""
         try:
-            client_hash = binascii.hexlify(
-                base64.b64decode(aux["coreClient"]["checksum"])
-            ).decode("ascii")
-            authentication_session_id = aux["parameters"]["authenticationSessionId"]
-
+            client_hash = binascii.hexlify(base64.b64decode(aux["coreClient"]["checksum"])).decode("ascii")
             self.mitid_client = BrowserClient(
-                client_hash, authentication_session_id, self.session
-            )
-            available_authenticators = (
-                self.mitid_client.identify_as_user_and_get_available_authenticators(
-                    self.mitid_username
-                )
-            )
-
-            self.log(
-                f"Chosen method is {self.auth_method}, Available authenticators: {available_authenticators}"
-            )
-
-            if self.auth_method == "TOKEN" and "TOKEN" in available_authenticators:
-                self.log("Starting token authentication")
-                if not self.mitid_password:
-                    raise MitIDError(
-                        "MitID password is required for TOKEN authentication method"
-                    )
-                if not self.mitid_token:
-                    raise MitIDError(
-                        "MitID token digits are required for TOKEN authentication method"
-                    )
-                self.log("Starting token authentication with provided credentials")
-                self.mitid_client.authenticate_with_token(self.mitid_token)
-                self.mitid_client.authenticate_with_password(self.mitid_password)
-            elif self.auth_method == "APP" and "APP" in available_authenticators:
-                self.mitid_client.authenticate_with_app()
-            else:
-                raise MitIDError(
-                    f"Authentication method {self.auth_method} not available"
-                )
-
-            authorization_code = (
-                self.mitid_client.finalize_authentication_and_get_authorization_code()
-            )
-            return authorization_code
-
-        except Exception as e:
-            raise MitIDError(f"MitID authentication failed: {str(e)}")
-
-    def step5_complete_mitid_flow(
-        self, verification_token: str, authorization_code: str
-    ) -> Dict:
-        """Step 5: Complete MitID authentication and get SAML response"""
-        self.log("Completing MitID authentication flow")
-
-        try:
-            session_storage_active_session_uuid = self.session.cookies.get(
-                "SessionUuid", ""
-            )
-            session_storage_active_challenge = self.session.cookies.get("Challenge", "")
-
-            params = {
-                "__RequestVerificationToken": verification_token,
-                "NewCulture": "",
-                "MitIDUseConfirmed": "True",
-                "MitIDAuthCode": authorization_code,
-                "MitIDAuthenticationCancelled": "",
-                "MitIDCoreClientError": "",
-                "SessionStorageActiveSessionUuid": session_storage_active_session_uuid,
-                "SessionStorageActiveChallenge": session_storage_active_challenge,
-            }
-
-            self.log(
-                f"Submitting MitID completion data to: https://nemlog-in.mitid.dk/login/mitid"
-            )
-            request = self.session.post(
-                "https://nemlog-in.mitid.dk/login/mitid",
-                data=params,
+                self.session.session,
+                client_hash,
+                str(aux["parameters"]["authenticationSessionId"]),
+                headers=self.session.headers,
                 timeout=self.timeout,
+                base_url=self.mitid_url,
             )
+            await self.mitid_client.start()
+            authenticators = await self.mitid_client.identify_as_user_and_get_available_authenticators(
+                self.mitid_username
+            )
+            self.log(f"Chosen method is {self.auth_method}, available authenticators: {list(authenticators)}")
+            if self.auth_method == "TOKEN" and "TOKEN" in authenticators:
+                if not self.mitid_password:
+                    raise MitIDError("MitID password is required for TOKEN authentication method")
+                if not self.mitid_token:
+                    raise MitIDError("MitID token digits are required for TOKEN authentication method")
+                await self.mitid_client.authenticate_with_token(self.mitid_token)
+                await self.mitid_client.authenticate_with_password(self.mitid_password)
+            elif self.auth_method == "APP" and "APP" in authenticators:
+                await self.mitid_client.authenticate_with_app()
+            else:
+                raise MitIDError(f"Authentication method {self.auth_method} not available")
+            return await self.mitid_client.finalize_authentication_and_get_authorization_code()
+        except Exception as e:
+            raise MitIDError(f"MitID authentication failed: {redact(e)}") from e
 
-            self.log(f"MitID completion response: {request.status_code}", "DEBUG")
-            self.log(f"Final URL: {request.url}", "DEBUG")
+    async def step5_complete_mitid_flow(self, verification_token: str, authorization_code: str) -> SamlResponse:
+        """Hand MitID's authorization code to NemLog-in, choosing the identity where it asks, and give its SAML response.
 
-            soup = BeautifulSoup(request.text, features="html.parser")
-
-            # Handle multiple identity options if present
-            if request.url == "https://nemlog-in.mitid.dk/loginoption":
+        Raises:
+            SAMLError: NemLog-in answered with no SAML response.
+            MitIDError: The identity chosen is not one offered.
+            NetworkError: NemLog-in could not be reached.
+        """
+        self.log("Completing MitID authentication flow")
+        params = {
+            "__RequestVerificationToken": verification_token,
+            "NewCulture": "",
+            "MitIDUseConfirmed": "True",
+            "MitIDAuthCode": authorization_code,
+            "MitIDAuthenticationCancelled": "",
+            "MitIDCoreClientError": "",
+            "SessionStorageActiveSessionUuid": self.session.cookies.get("SessionUuid", ""),
+            "SessionStorageActiveChallenge": self.session.cookies.get("Challenge", ""),
+        }
+        try:
+            response = await self.session.post(f"{self.nemlogin_url}/login/mitid", data=params)
+            self.log(f"MitID completion response: {response.status_code}", "DEBUG")
+            soup = BeautifulSoup(response.text, "html.parser")
+            if response.url == f"{self.nemlogin_url}/loginoption":
                 self.log("Multiple identity options detected, choosing...")
-                request, soup = self._choose_between_multiple_identities(request, soup)
-                self.log(
-                    f"After identity choice: {request.status_code} -> {request.url}"
-                )
+                response, soup = await self._choose_between_multiple_identities(response, soup)
+        except (aiohttp.ClientError, TimeoutError) as e:
+            raise NetworkError(f"Network error during MitID completion: {redact(e)}") from e
 
-            # Extract SAML response
-            relay_state_input = soup.find("input", {"name": "RelayState"})
-            saml_response_input = soup.find("input", {"name": "SAMLResponse"})
+        relay_state = _tag(soup.find("input", {"name": "RelayState"}))
+        saml_response = _tag(soup.find("input", {"name": "SAMLResponse"}))
+        if relay_state is None:
+            raise SAMLError("Could not find RelayState in MitID completion response")
+        if saml_response is None:
+            raise SAMLError("Could not find SAMLResponse in MitID completion response")
+        return {
+            "relay_state": _attribute(relay_state, "value"),
+            "saml_response": _attribute(saml_response, "value"),
+            "completion_url": response.url,
+        }
 
-            if not relay_state_input:
-                raise SAMLError(
-                    "Could not find RelayState in MitID completion response"
-                )
-
-            if not saml_response_input:
-                raise SAMLError(
-                    "Could not find SAMLResponse in MitID completion response"
-                )
-
-            relay_state = relay_state_input.get("value")
-            saml_response = saml_response_input.get("value")
-
-            self.log(f" SAML data extracted successfully")
-
-            return {
-                "relay_state": relay_state,
-                "saml_response": saml_response,
-                "completion_url": request.url,
-            }
-
-        except requests.RequestException as e:
-            raise NetworkError(f"Network error during MitID completion: {str(e)}")
-
-    def _choose_between_multiple_identities(self, request, soup):
-        """Handle multiple identity selection"""
-        data = {}
-        for soup_input in soup.form.select("input"):
-            try:
-                name = soup_input["name"]
-                data[name] = soup_input.get("value", "")
-            except KeyError:
-                try:
-                    data[soup_input["id"]] = soup_input.get("value", "")
-                except KeyError:
-                    self.log(
-                        f"Could not store value for input field {soup_input}", "WARN"
-                    )
-
-        # Update SessionStorage values from cookies (they might have changed)
+    async def _choose_between_multiple_identities(
+        self, response: HttpResponse, soup: BeautifulSoup
+    ) -> tuple[HttpResponse, BeautifulSoup]:
+        """Choose one of the identities NemLog-in offers, and give its answer."""
+        data: dict[str, str] = {}
+        form = soup.select_one("form")
+        inputs: list[Tag] = form.select("input") if form is not None else []
+        for found in inputs:
+            key = _attribute(found, "name") or _attribute(found, "id")
+            if key:
+                data[key] = _attribute(found, "value")
         session_uuid = self.session.cookies.get("SessionUuid", "")
         challenge = self.session.cookies.get("Challenge", "")
         if session_uuid:
@@ -584,197 +428,86 @@ class AulaLoginClient:
         if challenge:
             data["SessionStorageActiveChallenge"] = challenge
 
-        login_options = soup.select("a.list-link")
-        identities = []
-        identity_names = []
-        for i, login_option in enumerate(login_options):
-            identity_name = login_option.select_one("div.list-link-text").string
-            identities.append(i + 1)
-            identity_names.append(identity_name)
+        options = [option for option in (_tag(found) for found in soup.select("a.list-link")) if option is not None]
+        names = [option.select_one("div.list-link-text") for option in options]
+        self.available_identities = [name.get_text() if name is not None else "" for name in names]
 
-        # Store the available identities for external handling
-        self.available_identities = identity_names
-
-        # If identity_selector callback is provided, use it; otherwise use input()
-        if hasattr(self, "identity_selector") and self.identity_selector:
-            identity = self.identity_selector(identity_names)
+        if self.identity_selector is not None:
+            chosen = self.identity_selector(self.available_identities)
+            identity = await chosen if inspect.isawaitable(chosen) else chosen
         else:
-            self.log("You can choose between different identities:", "INFO")
-            for i, name in enumerate(identity_names):
-                self.log(f"{i+1}: {name}", "INFO")
-            identity = 1  # input("Enter the identity you want to use: ").strip()
-
-        if int(identity) in identities:
-            selected_login_option = login_options[int(identity) - 1]
-            selected_option = selected_login_option["data-loginoptions"]
-            data["ChosenOptionJson"] = selected_option
-        else:
-            raise MitIDError("Identity not in list of identities")
-
-        # Need to follow redirects and use proper headers
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Referer": request.url,
-        }
-        request = self.session.post(
-            request.url,
-            data=data,
-            headers=headers,
-            timeout=self.timeout,
-            allow_redirects=True,
-        )
-        soup = BeautifulSoup(request.text, features="html.parser")
-        return request, soup
-
-    def step6_saml_broker_flow(self, saml_data: Dict) -> Dict:
-        """Step 6: Complete SAML broker authentication"""
-        self.log("Processing SAML broker flow")
-
+            identity = 1
         try:
-            # Post SAML response to broker
-            saml_post_headers = {
-                "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
-                "accept-encoding": "gzip, deflate, br, zstd",
-                "accept-language": "en-US,en;q=0.9,da;q=0.8",
-                "cache-control": "max-age=0",
-                "content-type": "application/x-www-form-urlencoded",
-                "origin": "https://nemlog-in.mitid.dk",
-                "referer": "https://nemlog-in.mitid.dk/login/mitid",
-                "sec-fetch-dest": "document",
-                "sec-fetch-mode": "navigate",
-                "sec-fetch-site": "cross-site",
-                "sec-fetch-user": "?1",
-                "upgrade-insecure-requests": "1",
-            }
+            selected = options[int(identity) - 1] if int(identity) >= 1 else None
+        except (ValueError, IndexError):
+            selected = None
+        if selected is None:
+            raise MitIDError("Identity not in list of identities")
+        data["ChosenOptionJson"] = _attribute(selected, "data-loginoptions")
 
-            params = {
-                "RelayState": saml_data["relay_state"],
-                "SAMLResponse": saml_data["saml_response"],
-            }
+        headers = {"Content-Type": "application/x-www-form-urlencoded", "Referer": response.url}
+        response = await self.session.post(response.url, data=data, headers=headers)
+        return response, BeautifulSoup(response.text, "html.parser")
 
-            # Add cookies to headers
-            cookie_header = "; ".join(
-                [f"{c.name}={c.value}" for c in self.session.cookies]
-            )
-            if cookie_header:
-                saml_post_headers["cookie"] = cookie_header
+    async def step6_saml_broker_flow(self, saml_data: SamlResponse) -> BrokerSamlResponse:
+        """Hand NemLog-in's SAML response to UniLogin's broker, and give the one it hands on to Aula.
 
-            # Post to broker endpoint
-            broker_response = self.session.post(
-                "https://broker.unilogin.dk/auth/realms/broker/broker/nemlogin3/endpoint",
+        Raises:
+            SAMLError: The broker did not take the response.
+            NetworkError: The broker could not be reached.
+        """
+        self.log("Processing SAML broker flow")
+        headers = {
+            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+            "accept-language": "en-US,en;q=0.9,da;q=0.8",
+            "cache-control": "max-age=0",
+            "content-type": "application/x-www-form-urlencoded",
+            "origin": self.nemlogin_url,
+            "referer": f"{self.nemlogin_url}/login/mitid",
+            "sec-fetch-dest": "document",
+            "sec-fetch-mode": "navigate",
+            "sec-fetch-site": "cross-site",
+            "sec-fetch-user": "?1",
+            "upgrade-insecure-requests": "1",
+            **self._cookie_header(),
+        }
+        params = {"RelayState": saml_data["relay_state"], "SAMLResponse": saml_data["saml_response"]}
+        try:
+            response = await self.session.post(
+                f"{self.broker_url}/auth/realms/broker/broker/nemlogin3/endpoint",
                 data=params,
-                headers=saml_post_headers,
+                headers=headers,
                 allow_redirects=False,
-                timeout=self.timeout,
             )
-
-            if "Location" not in broker_response.headers:
+            if "Location" not in response.headers:
                 raise SAMLError("No redirect from broker endpoint")
+            return await self._process_broker_response(await self.session.get(response.headers["Location"]))
+        except (aiohttp.ClientError, TimeoutError) as e:
+            raise NetworkError(f"Network error during SAML broker flow: {redact(e)}") from e
 
-            # Follow redirect chain through broker
-            action_url = broker_response.headers["Location"]
-            final_request = self.session.get(action_url, timeout=self.timeout)
-
-            return self._process_broker_response(final_request)
-
-        except requests.RequestException as e:
-            raise NetworkError(f"Network error during SAML broker flow: {str(e)}")
-
-    def _process_broker_response(self, response) -> Dict:
-        """Process broker response and extract session parameters"""
+    async def _process_broker_response(self, response: HttpResponse) -> BrokerSamlResponse:
+        """Pass the broker's own pages - the role, as a guardian, and its confirmation - and give its SAML response to Aula."""
         soup = BeautifulSoup(response.text, "html.parser")
-
-        # Extract session parameters from URL or form
-        parsed_url = urlparse(response.url)
-        query_params = parse_qs(parsed_url.query)
-
-        session_code = query_params.get("session_code", [""])[0]
-        execution = query_params.get("execution", [""])[0]
-        client_id = query_params.get("client_id", [""])[0]
-        tab_id = query_params.get("tab_id", [""])[0]
-
-        # Fallback to form extraction if not in URL
-        if not session_code or not execution:
-            form = soup.find("form")
-            if form:
-                form_action = form.get("action", "")
-                if form_action:
-                    parsed_form_url = urlparse(form_action)
-                    form_query_params = parse_qs(parsed_form_url.query)
-                    session_code = form_query_params.get("session_code", [""])[0]
-                    execution = form_query_params.get("execution", [""])[0]
-                    client_id = form_query_params.get("client_id", [""])[0]
-                    tab_id = form_query_params.get("tab_id", [""])[0]
-
-        # Complete post-broker-login
-        self.log(f"Broker response URL for param extraction: {response.url}", "DEBUG")
-        self.log(
-            f"Broker params - session_code: {session_code}, execution: {execution}, client_id: {client_id}, tab_id: {tab_id}", "DEBUG"
-        )
-
-        # Extract form data to submit
-        form = soup.find("form")
-        form_data = {}
-
-        # Log the full page to understand what we're dealing with
-        self.log(f"Broker page HTML (first 3000 chars): {response.text[:3000]}", "DEBUG")
-
-        if form:
-            form_action = form.get("action", "")
-            self.log(f"Found form action: {form_action}")
-            inputs = form.find_all("input")
-            for inp in inputs:
-                name = inp.get("name")
-                value = inp.get("value", "")
-                if name:
-                    form_data[name] = value
-                self.log(
-                    f"  Form input: name={name}, type={inp.get('type')}, value={value[:50] if value else 'empty'}"
-                )
-
-            # Handle role selection if present (Elev vs Kontakt)
-            if "selected-aktoer" in form_data:
-                self.log(
-                    "Found role selection form (selected-aktoer), setting to 'KONTAKT'"
-                )
-                form_data["selected-aktoer"] = "KONTAKT"
-
-            # Also look for select elements and buttons that might have values
-            selects = form.find_all("select")
-            for sel in selects:
-                self.log(f"  Select: name={sel.get('name')}")
-                options = sel.find_all("option")
-                for opt in options:
-                    self.log(
-                        f"    Option: value={opt.get('value')}, text={opt.text[:50] if opt.text else 'empty'}"
-                    )
-
-            # Look for radio buttons or other input types
-            buttons = form.find_all("button")
-            for btn in buttons:
-                self.log(
-                    f"  Button: type={btn.get('type')}, name={btn.get('name')}, value={btn.get('value')}"
-                )
-
-            # Use the form action URL if available (it has all the proper params)
-            if form_action and form_action.startswith("http"):
-                post_broker_url = form_action
-            elif form_action:
-                post_broker_url = f"https://broker.unilogin.dk{form_action}"
-            else:
-                post_broker_url = f"https://broker.unilogin.dk/auth/realms/broker/login-actions/post-broker-login?session_code={session_code}&execution={execution}&client_id={client_id}&tab_id={tab_id}"
+        form = _tag(soup.find("form"))
+        action = _attribute(form, "action")
+        # The broker's session is in the page's URL, or else in its form's.
+        query = parse_qs(urlparse(response.url).query)
+        if not query.get("session_code") or not query.get("execution"):
+            query = parse_qs(urlparse(action).query)
+        params = {name: query.get(name, [""])[0] for name in ("session_code", "execution", "client_id", "tab_id")}
+        if action:
+            url = urljoin(response.url, action)
         else:
-            self.log("No form found in broker response")
-            post_broker_url = f"https://broker.unilogin.dk/auth/realms/broker/login-actions/post-broker-login?session_code={session_code}&execution={execution}&client_id={client_id}&tab_id={tab_id}"
+            url = f"{self.broker_url}/auth/realms/broker/login-actions/post-broker-login?{urllib.parse.urlencode(params)}"
+        if not params["session_code"] or not params["execution"]:
+            self.log("Missing broker session parameters", "WARNING")
 
-        if not session_code or not execution:
-            self.log(f"Warning: Missing broker params. Response URL: {response.url}")
-            self.log(f"Response body (first 1000 chars): {response.text[:1000]}")
+        fields = _form_fields(form) if form is not None else {}
+        # A guardian who is also a pupil is asked which role to log in as.
+        if "selected-aktoer" in fields:
+            fields["selected-aktoer"] = "KONTAKT"
 
-        self.log(f"Post-broker URL: {post_broker_url}", "DEBUG")
-        self.log(f"Post-broker form data: {form_data}", "DEBUG")
-
-        post_broker_headers = {
+        headers = {
             "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "content-type": "application/x-www-form-urlencoded",
             "sec-fetch-dest": "document",
@@ -782,966 +515,252 @@ class AulaLoginClient:
             "sec-fetch-site": "same-origin",
             "upgrade-insecure-requests": "1",
         }
+        response = await self.session.post(url, headers={**headers, **self._cookie_header()}, data=fields, allow_redirects=False)
+        self.log(f"Post-broker response status: {response.status_code}", "DEBUG")
 
-        # Add cookies
-        cookie_header = "; ".join([f"{c.name}={c.value}" for c in self.session.cookies])
-        if cookie_header:
-            post_broker_headers["cookie"] = cookie_header
-
-        post_broker_response = self.session.post(
-            post_broker_url,
-            headers=post_broker_headers,
-            data=form_data,
-            allow_redirects=False,
-            timeout=self.timeout,
-        )
-
-        self.log(f"Post-broker response status: {post_broker_response.status_code}", "DEBUG")
-        self.log(f"Post-broker response headers: {dict(post_broker_response.headers)}", "DEBUG")
-        if post_broker_response.status_code != 302:
-            self.log(f"Post-broker response body: {post_broker_response.text}", "DEBUG")
-
-        # Handle intermediate confirmation page (200 OK)
-        if post_broker_response.status_code == 200:
-            soup = BeautifulSoup(post_broker_response.text, "html.parser")
-            confirmation_button = soup.find("button", {"id": "confirmation-button"})
-
-            if confirmation_button:
-                self.log(
-                    "Found intermediate confirmation page (UniLogin success), submitting..."
+        if response.status_code == 200:
+            button = _tag(BeautifulSoup(response.text, "html.parser").find("button", {"id": "confirmation-button"}))
+            confirmation = _tag(button.find_parent("form")) if button is not None else None
+            confirm_action = _attribute(confirmation, "action")
+            if confirmation is not None and confirm_action:
+                self.log("Found intermediate confirmation page (UniLogin success), submitting...")
+                response = await self.session.post(
+                    urljoin(response.url, confirm_action),
+                    headers={**headers, **self._cookie_header()},
+                    data=_form_fields(confirmation),
+                    allow_redirects=False,
                 )
-                form = confirmation_button.find_parent("form")
-                if form:
-                    action = form.get("action")
-                    if action:
-                        if not action.startswith("http"):
-                            action = urljoin(post_broker_response.url, action)
 
-                        self.log(f"Submitting confirmation form to: {action}")
-
-                        conf_data = {}
-                        for inp in form.find_all("input"):
-                            if inp.get("name"):
-                                conf_data[inp.get("name")] = inp.get("value", "")
-
-                        # Update cookies for the next request
-                        cookie_header = "; ".join(
-                            [f"{c.name}={c.value}" for c in self.session.cookies]
-                        )
-                        if cookie_header:
-                            post_broker_headers["cookie"] = cookie_header
-
-                        post_broker_response = self.session.post(
-                            action,
-                            headers=post_broker_headers,
-                            data=conf_data,
-                            allow_redirects=False,
-                            timeout=self.timeout,
-                        )
-
-                        self.log(
-                            f"Confirmation response status: {post_broker_response.status_code}", "DEBUG"
-                        )
-                        if post_broker_response.status_code != 302:
-                            self.log(
-                                f"Confirmation response body: {post_broker_response.text}", "DEBUG"
-                            )
-
-        if "Location" not in post_broker_response.headers:
-            raise SAMLError(
-                f"No redirect from post-broker-login (status={post_broker_response.status_code})"
-            )
-
-        # Follow final redirect
-        after_post_broker_url = post_broker_response.headers["Location"]
-        after_response = self.session.get(after_post_broker_url, timeout=self.timeout)
-
-        # Extract final SAML response for Aula
-        after_soup = BeautifulSoup(after_response.text, "html.parser")
-
-        self.log(f"Final broker response URL: {after_response.url}", "DEBUG")
-        self.log(f"Final broker response status: {after_response.status_code}", "DEBUG")
-
-        saml_form = after_soup.find("form")
-
-        if not saml_form:
+        if "Location" not in response.headers:
+            raise SAMLError(f"No redirect from post-broker-login (status={response.status_code})")
+        after = await self.session.get(response.headers["Location"])
+        saml_form = _tag(BeautifulSoup(after.text, "html.parser").find("form"))
+        if saml_form is None:
             raise SAMLError("No SAML form found in broker response")
-
-        self.log(f" Found SAML form with action: {saml_form.get('action', 'N/A')}")
-
-        saml_response_input = saml_form.find("input", {"name": "SAMLResponse"})
-        relay_state_input = saml_form.find("input", {"name": "RelayState"})
-
-        if not saml_response_input:
+        saml_response = _tag(saml_form.find("input", {"name": "SAMLResponse"}))
+        if saml_response is None:
             raise SAMLError("Could not find SAMLResponse - this is critical")
-
-        # RelayState might be optional in some flows
-        relay_state_value = relay_state_input.get("value") if relay_state_input else ""
-
-        if not relay_state_input:
-            self.log("  RelayState not found - this might be OK for Level 3 auth flow")
-
         return {
-            "final_saml_response": saml_response_input.get("value"),
-            "final_relay_state": relay_state_value,
-            "form_action": saml_form.get("action", ""),
+            "final_saml_response": _attribute(saml_response, "value"),
+            "final_relay_state": _attribute(_tag(saml_form.find("input", {"name": "RelayState"})), "value"),
+            "form_action": _attribute(saml_form, "action"),
         }
 
-    def step7_complete_aula_login(self, saml_data: Dict) -> str:
-        """Step 7: Complete Aula login with SAML response"""
-        self.log("Completing Aula login with SAML response")
-
-        try:
-            aula_saml_headers = {
-                "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "content-type": "application/x-www-form-urlencoded",
-                "origin": "null",
-                "sec-fetch-dest": "document",
-                "sec-fetch-mode": "navigate",
-                "sec-fetch-site": "cross-site",
-                "upgrade-insecure-requests": "1",
-            }
-
-            # Add Aula cookies
-            aula_cookie_header = "; ".join(
-                [
-                    f"{c.name}={c.value}"
-                    for c in self.session.cookies
-                    if "aula.dk" in c.domain or c.domain == ""
-                ]
-            )
-            if aula_cookie_header:
-                aula_saml_headers["cookie"] = aula_cookie_header
-
-            aula_saml_data = {
-                "SAMLResponse": saml_data["final_saml_response"],
-                "RelayState": saml_data["final_relay_state"],
-            }
-
-            # Use the form action from the broker response instead of hardcoding
-            saml_endpoint = saml_data.get(
-                "form_action",
-                "https://login.aula.dk/simplesaml/module.php/saml/sp/saml2-acs.php/uni-sp",
-            )
-            self.log(f"Submitting SAML response to: {saml_endpoint}")
-
-            # Post to Aula SAML endpoint
-            aula_response = self.session.post(
-                saml_endpoint,
-                headers=aula_saml_headers,
-                data=aula_saml_data,
-                allow_redirects=False,
-                timeout=self.timeout,
-            )
-
-            self.log(f"SAML response status: {aula_response.status_code}", "DEBUG")
-
-            if "Location" not in aula_response.headers:
-                raise OAuthError("No redirect from Aula SAML endpoint")
-
-            # Follow the redirect chain manually to capture all steps
-            return self._follow_oauth_callback_redirects(
-                aula_response.headers["Location"]
-            )
-
-        except requests.RequestException as e:
-            raise NetworkError(f"Network error during Aula login completion: {str(e)}")
-
-    def _follow_oauth_callback_redirects(self, start_url: str) -> str:
-        """Follow redirects to find the OAuth callback URL"""
-        redirect_url = start_url
-        redirect_count = 0
-        max_redirects = 10
-
-        while redirect_count < max_redirects:
-            redirect_count += 1
-            self.log(f"Following redirect #{redirect_count}: {redirect_url[:100]}...")
-
-            redirect_response = self.session.get(
-                redirect_url, allow_redirects=False, timeout=self.timeout
-            )
-            self.log(f"Redirect response status: {redirect_response.status_code}", "DEBUG")
-
-            # Check if this is the OAuth callback we're looking for
-            if (
-                self.app_redirect_uri in redirect_response.url
-                and "code=" in redirect_response.url
-            ):
-                self.log(f" Found OAuth callback URL: {redirect_response.url}")
-                return redirect_response.url
-
-            # Check if this is the OAuth callback in Location header
-            if "Location" in redirect_response.headers:
-                location = redirect_response.headers["Location"]
-                if self.app_redirect_uri in location and "code=" in location:
-                    self.log(f" Found OAuth callback in Location header: {location}")
-                    return location
-
-            # If it's a 200 response, check the final URL
-            if redirect_response.status_code == 200:
-                final_url = redirect_response.url
-                self.log(f"Final destination (200): {final_url}")
-
-                # Check if we got an OAuth callback URL
-                if self.app_redirect_uri in final_url and "code=" in final_url:
-                    return final_url
-                else:
-                    raise OAuthError(
-                        f"Did not receive OAuth callback URL. Final URL: {final_url}"
-                    )
-
-            # If it's a redirect, follow it
-            elif redirect_response.status_code in [301, 302, 303, 307, 308]:
-                if "Location" not in redirect_response.headers:
-                    raise OAuthError(
-                        f"Redirect response missing Location header at step {redirect_count}"
-                    )
-
-                redirect_url = redirect_response.headers["Location"]
-
-                # Handle relative URLs
-                if redirect_url.startswith("/"):
-                    base_url = f"{urlparse(redirect_response.url).scheme}://{urlparse(redirect_response.url).netloc}"
-                    redirect_url = urljoin(base_url, redirect_url)
-            else:
-                raise OAuthError(
-                    f"Unexpected status code {redirect_response.status_code} at redirect step {redirect_count}"
-                )
-
-        raise OAuthError(
-            f"Too many redirects ({max_redirects}) without finding OAuth callback"
-        )
-
-    def step8_exchange_oauth_code(self, callback_url: str) -> Dict:
-        """Step 8: Exchange OAuth authorization code for tokens"""
-        self.log("Exchanging OAuth authorization code for tokens")
-
-        try:
-            # Parse callback URL
-            parsed_url = urlparse(callback_url)
-            query_params = parse_qs(parsed_url.query)
-
-            if "code" not in query_params:
-                raise OAuthError("No authorization code in callback URL")
-
-            auth_code = query_params["code"][0]
-
-            # Verify state parameter
-            if "state" in query_params:
-                returned_state = query_params["state"][0]
-                if returned_state != self.state:
-                    raise OAuthError("State parameter mismatch")
-
-            # Exchange code for tokens
-            token_url = f"{self.auth_base_url}/simplesaml/module.php/oidc/token.php"
-
-            token_data = {
-                "grant_type": "authorization_code",
-                "code": auth_code,
-                "client_id": self.client_id_level_3,
-                "redirect_uri": self.app_redirect_uri,
-                "code_verifier": self.code_verifier,
-            }
-
-            headers = {
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Accept": "application/json",
-            }
-
-            response = self.session.post(
-                token_url, data=token_data, headers=headers, timeout=self.timeout
-            )
-
-            if response.status_code != 200:
-                raise OAuthError(
-                    f"Token exchange failed: {response.status_code} - {response.text}"
-                )
-
-            tokens = response.json()
-
-            # Calculate expires_at timestamp for persistence
-            if "expires_in" in tokens:
-                tokens["expires_at"] = time.time() + tokens["expires_in"]
-
-            self.tokens = tokens
-
-            self.log("Token exchange successful!")
-            self.log(
-                f"Access token expires in: {tokens.get('expires_in', 'Unknown')} seconds"
-            )
-
-            return tokens
-
-        except requests.RequestException as e:
-            raise NetworkError(f"Network error during token exchange: {str(e)}")
-        except json.JSONDecodeError as e:
-            raise OAuthError(f"Invalid token response format: {str(e)}")
-
-    def step9_test_api_access(self) -> Dict:
-        """Step 9: Test API access with obtained tokens"""
-        self.log("Testing Aula API access")
-
-        if not self.tokens or "access_token" not in self.tokens:
-            raise APIError("No access token available")
-
-        try:
-            # Based on HAR file analysis - actual v22 API endpoints with correct parameters
-            v22_api_base = "https://www.aula.dk/api/v22/"
-
-            # Generate a device ID similar to what the app uses
-            device_id = f"Droid-private-{str(uuid.uuid4())}"
-
-            test_endpoints = [
-                # Core configuration endpoints (no auth needed)
-                (
-                    "centralConfiguration.getLoginImportantInformation",
-                    "GET",
-                    {"platform": "android-private"},
-                ),
-                # Profile endpoints (main user data) - these need access_token
-                (
-                    "profiles.getProfileTypesByLogin",
-                    "GET",
-                    {"access_token": self.tokens["access_token"]},
-                ),
-                (
-                    "profiles.getprofilesbylogin",
-                    "GET",
-                    {
-                        "portalRoles[]": "guardian",
-                        "access_token": self.tokens["access_token"],
-                    },
-                ),
-            ]
-
-            results = {}
-            api_headers = {
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "User-Agent": self.session.headers["User-Agent"],
-            }
-
-            for method_name, http_method, params in test_endpoints:
-                # Build URL with method parameter
-                url_params = {"method": method_name}
-                url_params.update(params)
-
-                # Convert params to query string
-                param_string = "&".join([f"{k}={v}" for k, v in url_params.items()])
-                url = f"{v22_api_base}?{param_string}"
-
-                try:
-                    self.log(f"Testing v22 API method: {method_name}")
-
-                    if http_method == "GET":
-                        response = self.session.get(
-                            url, headers=api_headers, timeout=self.timeout
-                        )
-                    elif http_method == "POST":
-                        response = self.session.post(
-                            url,
-                            headers=api_headers,
-                            json=params.get("data", {}),
-                            timeout=self.timeout,
-                        )
-                    else:
-                        continue
-
-                    results[method_name] = {
-                        "status_code": response.status_code,
-                        "success": response.status_code == 200,
-                        "url": url,
-                        "method": http_method,
-                    }
-
-                    if response.status_code == 200:
-                        try:
-                            data = response.json()
-                            results[method_name]["data"] = data
-                            self.log(f" {method_name}: Success - response received")
-                        except (ValueError, KeyError):
-                            results[method_name]["data"] = response.text[:200]
-                            self.log(f" {method_name}: Success - non-JSON response")
-                    else:
-                        results[method_name]["error"] = f"HTTP {response.status_code}"
-                        self.log(f"  {method_name}: {response.status_code}")
-
-                except Exception as e:
-                    self.log(f" {method_name}: Exception - {str(e)}")
-                    results[method_name] = {
-                        "success": False,
-                        "error": str(e),
-                        "url": url,
-                    }
-
-            # Check if any endpoint worked
-            successful_endpoints = [
-                ep for ep, result in results.items() if result.get("success")
-            ]
-
-            if successful_endpoints:
-                self.log(
-                    f"✅ API access working! Successful endpoints: {successful_endpoints}"
-                )
-                return {
-                    "success": True,
-                    "results": results,
-                    "working_endpoints": successful_endpoints,
-                }
-            else:
-                self.log("  No API endpoints worked, but authentication was successful")
-                return {
-                    "success": False,
-                    "results": results,
-                    "message": "Authentication successful but API access limited",
-                }
-
-        except requests.RequestException as e:
-            raise NetworkError(f"Network error during API testing: {str(e)}")
-
-    def check_token_expiration(self) -> Dict:
-        """Check if the access token is about to expire"""
-        if not self.tokens or "access_token" not in self.tokens:
-            return {"valid": False, "reason": "No access token available"}
-
-        try:
-            # Decode JWT token to check expiration
-            token_parts = self.tokens["access_token"].split(".")
-            if len(token_parts) >= 2:
-                payload = token_parts[1]
-                padding = 4 - (len(payload) % 4)
-                if padding != 4:
-                    payload += "=" * padding
-                decoded = base64.urlsafe_b64decode(payload)
-                token_data = json.loads(decoded)
-
-                exp_timestamp = token_data.get("exp")
-                if exp_timestamp:
-                    current_time = time.time()
-                    expires_in = exp_timestamp - current_time
-
-                    # Consider token expired if less than 5 minutes remaining
-                    if expires_in < 300:  # 5 minutes
-                        return {
-                            "valid": False,
-                            "reason": f"Token expires in {int(expires_in)} seconds",
-                            "expires_in": expires_in,
-                        }
-                    else:
-                        return {
-                            "valid": True,
-                            "expires_in": expires_in,
-                            "expires_at": exp_timestamp,
-                        }
-
-        except Exception as e:
-            self.log(f"Error checking token expiration: {str(e)}")
-
-        # If we can't decode the token, assume it's invalid
-        return {"valid": False, "reason": "Unable to decode token"}
-
-    def renew_access_token(self) -> bool:
-        """Renew the access token using the refresh token.
-
-        Returns:
-            True if token was renewed successfully, False if server rejected.
+    async def step7_complete_aula_login(self, saml_data: BrokerSamlResponse) -> str:
+        """Hand the broker's SAML response to Aula, and give the OAuth callback URL Aula ends at.
 
         Raises:
-            NetworkError: On transient network failures (connection error, timeout, DNS).
-            TokenExpiredError: On HTTP 401/403 (refresh token permanently invalid).
+            OAuthError: Aula did not send the login back with a code.
+            NetworkError: Aula could not be reached.
+        """
+        self.log("Completing Aula login with SAML response")
+        headers = {
+            "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+            "content-type": "application/x-www-form-urlencoded",
+            "origin": "null",
+            "sec-fetch-dest": "document",
+            "sec-fetch-mode": "navigate",
+            "sec-fetch-site": "cross-site",
+            "upgrade-insecure-requests": "1",
+            **self._cookie_header("aula.dk"),
+        }
+        data = {"SAMLResponse": saml_data["final_saml_response"], "RelayState": saml_data["final_relay_state"]}
+        # A form without an action is sent where the browser is, which is Aula's own endpoint.
+        endpoint = saml_data["form_action"] or f"{self.auth_base_url}/simplesaml/module.php/saml/sp/saml2-acs.php/uni-sp"
+        try:
+            response = await self.session.post(endpoint, headers=headers, data=data, allow_redirects=False)
+            if "Location" not in response.headers:
+                raise OAuthError("No redirect from Aula SAML endpoint")
+            return await self._follow_oauth_callback_redirects(urljoin(response.url, response.headers["Location"]))
+        except (aiohttp.ClientError, TimeoutError) as e:
+            raise NetworkError(f"Network error during Aula login completion: {redact(e)}") from e
+
+    async def _follow_oauth_callback_redirects(self, start_url: str) -> str:
+        """Follow Aula's redirects up to the app's callback URL, with its code or its error, which is never requested."""
+        url = start_url
+        for _ in range(MAX_REDIRECTS):
+            if url.startswith(self.app_redirect_uri):
+                return url
+            response = await self.session.get(url, allow_redirects=False)
+            if response.status_code in REDIRECTS and "Location" in response.headers:
+                url = urljoin(response.url, response.headers["Location"])
+                continue
+            raise OAuthError(
+                f"Did not receive OAuth callback URL: {response.status_code} at {redact(response.url)}"
+            )
+        raise OAuthError(f"Too many redirects ({MAX_REDIRECTS}) without finding OAuth callback")
+
+    async def step8_exchange_oauth_code(self, callback_url: str) -> dict[str, Any]:
+        """Exchange the authorization code of the callback URL for Aula's tokens, and keep them.
+
+        Raises:
+            OAuthError: The URL has no code, or the wrong state, or Aula refused the code.
+            NetworkError: Aula could not be reached.
+        """
+        self.log("Exchanging OAuth authorization code for tokens")
+        query = parse_qs(urlparse(callback_url).query)
+        if "code" not in query:
+            raise OAuthError("No authorization code in callback URL")
+        if "state" in query and query["state"][0] != self.state:
+            raise OAuthError("State parameter mismatch")
+        token_data = {
+            "grant_type": "authorization_code",
+            "code": query["code"][0],
+            "client_id": self.client_id_level_3,
+            "redirect_uri": self.app_redirect_uri,
+            "code_verifier": self.code_verifier,
+        }
+        headers = {"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"}
+        try:
+            response = await self.session.post(
+                f"{self.auth_base_url}/simplesaml/module.php/oidc/token.php", data=token_data, headers=headers
+            )
+        except (aiohttp.ClientError, TimeoutError) as e:
+            raise NetworkError(f"Network error during token exchange: {redact(e)}") from e
+        if response.status_code != 200:
+            raise OAuthError(f"Token exchange failed: {response.status_code} - {redact(response.text)}")
+        try:
+            tokens = response.json()
+        except ValueError:
+            tokens = None
+        if not isinstance(tokens, dict):
+            raise OAuthError("Invalid token response format: no JSON object")
+        tokens = cast(dict[str, Any], tokens)
+        if "expires_in" in tokens:
+            tokens["expires_at"] = time.time() + tokens["expires_in"]
+        self.tokens = tokens
+        self.log(f"Token exchange successful, access token expires in {tokens.get('expires_in', 'unknown')} seconds")
+        return tokens
+
+    async def renew_access_token(self) -> bool:
+        """Renew the access token with the refresh token.
+
+        Returns:
+            Whether it was renewed; False also where Aula answered in a way the renewal does not
+            know, which may pass.
+
+        Raises:
+            NetworkError: Aula could not be reached, or answered with a server error.
+            TokenExpiredError: Aula no longer accepts the refresh token; only a new login helps.
         """
         if not self.tokens or "refresh_token" not in self.tokens:
             self.log("No refresh token available for renewal", "ERROR")
             return False
-
+        token_data = {
+            "grant_type": "refresh_token",
+            "refresh_token": self.tokens["refresh_token"],
+            "client_id": self.client_id_level_3,
+        }
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+            "User-Agent": self.session.headers["User-Agent"],
+        }
         try:
-            self.log("Attempting to renew access token using refresh token")
-
-            token_url = f"{self.auth_base_url}/simplesaml/module.php/oidc/token.php"
-
-            token_data = {
-                "grant_type": "refresh_token",
-                "refresh_token": self.tokens["refresh_token"],
-                "client_id": self.client_id_level_3,
-            }
-
-            token_headers = {
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Accept": "application/json",
-                "User-Agent": self.session.headers["User-Agent"],
-            }
-
-            response = self.session.post(
-                token_url, data=token_data, headers=token_headers, timeout=self.timeout
+            response = await self.session.post(
+                f"{self.auth_base_url}/simplesaml/module.php/oidc/token.php", data=token_data, headers=headers
             )
+        except (aiohttp.ClientError, TimeoutError, OSError) as e:
+            self.log(f"Network error during token renewal: {e}", "ERROR")
+            raise NetworkError(f"Network error during token refresh: {redact(e)}") from e
 
-            if response.status_code == 200:
-                token_response = response.json()
-
-                # Validate response before mutating state
-                if "access_token" not in token_response:
-                    self.log("Token response missing access_token field", "ERROR")
-                    return False
-
-                # Update tokens atomically
-                self.tokens["access_token"] = token_response["access_token"]
-                if "refresh_token" in token_response:
-                    self.tokens["refresh_token"] = token_response["refresh_token"]
-                if "expires_in" in token_response:
-                    self.tokens["expires_in"] = token_response["expires_in"]
-                    self.tokens["expires_at"] = time.time() + token_response["expires_in"]
-
-                self.log(
-                    f" Token renewed successfully! Expires in: {token_response.get('expires_in', 'unknown')} seconds"
-                )
-                return True
-            elif response.status_code in (401, 403):
-                self.log(
-                    f" Refresh token rejected (HTTP {response.status_code}). Re-authentication required.",
-                    "ERROR",
-                )
-                raise TokenExpiredError(
-                    f"Refresh token rejected by server (HTTP {response.status_code})"
-                )
-            elif response.status_code == 400 and _oauth_error(response) == "invalid_grant":
-                # OAuth 2.0 (RFC 6749, 5.2) answers 400 invalid_grant for a refresh token that is
-                # invalid, expired or revoked: only a new login helps.
-                self.log(" Refresh token no longer valid. Re-authentication required.", "ERROR")
-                raise TokenExpiredError("Refresh token rejected by server (invalid_grant)")
-            elif response.status_code >= 500 or response.status_code == 429:
-                self.log(
-                    f" Token renewal transient error (HTTP {response.status_code}). Will retry.",
-                    "WARNING",
-                )
-                raise NetworkError(
-                    f"Token endpoint returned transient error (HTTP {response.status_code})"
-                )
-            else:
-                self.log(
-                    f" Token renewal failed: {response.status_code} - {response.text}",
-                    "ERROR",
-                )
-                return False
-
-        except (TokenExpiredError, NetworkError):
-            raise
-        except (requests.ConnectionError, requests.Timeout, OSError) as e:
-            self.log(f" Network error during token renewal: {str(e)}", "ERROR")
-            raise NetworkError(f"Network error during token refresh: {e}") from e
-        except Exception as e:
-            self.log(f" Token renewal exception: {str(e)}", "ERROR")
-            return False
-
-    def test_token_validity(self) -> bool:
-        """Test if the current token is valid by making a simple API call"""
-        if not self.tokens or "access_token" not in self.tokens:
-            self.log("No access token available for validation")
+        if response.status_code in (401, 403):
+            self.log(f"Refresh token rejected (HTTP {response.status_code}). Re-authentication required.", "ERROR")
+            raise TokenExpiredError(f"Refresh token rejected by server (HTTP {response.status_code})")
+        if response.status_code == 400 and _oauth_error(response) == "invalid_grant":
+            # OAuth 2.0 (RFC 6749, 5.2) answers 400 invalid_grant for a refresh token that is
+            # invalid, expired or revoked: only a new login helps.
+            self.log("Refresh token no longer valid. Re-authentication required.", "ERROR")
+            raise TokenExpiredError("Refresh token rejected by server (invalid_grant)")
+        if response.status_code >= 500 or response.status_code == 429:
+            self.log(f"Token renewal transient error (HTTP {response.status_code}). Will retry.", "WARNING")
+            raise NetworkError(f"Token endpoint returned transient error (HTTP {response.status_code})")
+        if response.status_code != 200:
+            self.log(f"Token renewal failed: {response.status_code} - {response.text}", "ERROR")
             return False
 
         try:
-            test_url = (
-                "https://www.aula.dk/api/v22/"
-                "?method=profiles.getProfileContext&portalrole=guardian"
-                f"&access_token={self.tokens['access_token']}"
-            )
-
-            headers = {
-                "Accept": "application/json",
-                "User-Agent": self.session.headers["User-Agent"],
-            }
-
-            response = self.session.get(test_url, headers=headers, timeout=10)
-
-            if response.status_code == 200:
-                self.log("Token validation successful")
-                return True
-            elif response.status_code in [401, 403, 500]:
-                self.log(
-                    f"Token validation failed: {response.status_code} - Token invalid/expired"
-                )
-                return False
-            else:
-                self.log(f"Token validation uncertain: {response.status_code}")
-                return True  # Assume valid for non-auth errors
-
-        except Exception as e:
-            self.log(f"Token validation exception: {str(e)}")
+            renewed = response.json()
+        except ValueError:
+            renewed = None
+        if not isinstance(renewed, dict) or "access_token" not in renewed:
+            self.log("Token response missing access_token field", "ERROR")
             return False
+        renewed = cast(dict[str, Any], renewed)
+        self.tokens["access_token"] = renewed["access_token"]
+        if "refresh_token" in renewed:
+            self.tokens["refresh_token"] = renewed["refresh_token"]
+        if "expires_in" in renewed:
+            self.tokens["expires_in"] = renewed["expires_in"]
+            self.tokens["expires_at"] = time.time() + renewed["expires_in"]
+        self.log(f"Token renewed, expires in {renewed.get('expires_in', 'unknown')} seconds")
+        return True
 
-    def authenticate(self) -> Dict:
-        """
-        Execute the complete authentication flow.
+    async def authenticate(self) -> dict[str, Any]:
+        """Log in to Aula through MitID.
 
         Returns:
-            Dict containing success status, tokens, and profile data
+            `success`, True, and the `tokens`.
 
         Raises:
-            AulaAuthenticationError: If authentication fails at any step
+            AulaAuthenticationError: A step of the login failed; NetworkError, one of its kinds,
+                where a step could not be reached.
         """
-        self.log("=" * 60)
-        self.log("STARTING INTEGRATED AULA LOGIN FLOW")
-        self.log("=" * 60)
-
+        self.log("Starting Aula login")
         try:
-            # Step 1: Start OAuth flow (this will redirect to SAML)
-            saml_redirect_url = self.step1_start_oauth_flow()
-
-            # Step 2: Follow the OAuth→SAML redirect chain to MitID
-            mitid_data = self.step3_follow_redirect_chain(saml_redirect_url)
-
-            # Step 3: MitID authentication
-            auth_code = self.step4_mitid_authentication(
-                mitid_data["verification_token"]
-            )
-
-            # Step 4: Complete MitID flow
-            saml_response_data = self.step5_complete_mitid_flow(
-                mitid_data["verification_token"], auth_code
-            )
-
-            # Step 5: SAML broker flow
-            broker_data = self.step6_saml_broker_flow(saml_response_data)
-
-            # Step 6: Complete Aula login (this should now redirect back to OAuth)
-            callback_url = self.step7_complete_aula_login(broker_data)
-
-            # Step 7: Exchange OAuth code
-            tokens = self.step8_exchange_oauth_code(callback_url)
-
-            # Step 8: Test API access
-            profile_data = self.step9_test_api_access()
-
-            self.log("=" * 60)
-            self.log("AUTHENTICATION FLOW COMPLETED SUCCESSFULLY!")
-            self.log("=" * 60)
-
-            return {"success": True, "tokens": tokens, "profile_data": profile_data}
-
+            saml_redirect_url = await self.step1_start_oauth_flow()
+            mitid_page = await self.step3_follow_redirect_chain(saml_redirect_url)
+            auth_code = await self.step4_mitid_authentication(mitid_page["verification_token"])
+            saml_response = await self.step5_complete_mitid_flow(mitid_page["verification_token"], auth_code)
+            broker_response = await self.step6_saml_broker_flow(saml_response)
+            callback_url = await self.step7_complete_aula_login(broker_response)
+            tokens = await self.step8_exchange_oauth_code(callback_url)
+        except AulaAuthenticationError as e:
+            self.log(f"Authentication flow failed: {e}", "ERROR")
+            raise
         except Exception as e:
-            self.log(f"Authentication flow failed: {str(e)}", "ERROR")
-            # Re-raise with more specific error type if possible
-            if isinstance(e, (AulaAuthenticationError, NetworkError)):
-                raise
-            else:
-                raise AulaAuthenticationError(f"Authentication failed: {str(e)}")
+            self.log(f"Authentication flow failed: {e}", "ERROR")
+            raise AulaAuthenticationError(f"Authentication failed: {redact(e)}") from e
+        self.log("Aula login completed")
+        return {"success": True, "tokens": tokens}
 
-    def get_mitid_client(self):
-        """Get the MitID BrowserClient if available."""
-        return getattr(self, "mitid_client", None)
+    def get_mitid_client(self) -> BrowserClient | None:
+        """The MitID login while it runs, None otherwise."""
+        return self.mitid_client
 
-    def get_qr_codes_svg(self):
-        """Get QR codes as SVG strings for UI display."""
-        if not self.mitid_client:
-            return None
-
-        qr_codes = self.mitid_client.get_current_qr_codes()
+    def get_qr_codes_svg(self) -> tuple[str, str] | None:
+        """The two QR codes MitID shows in turn for the app to scan, as SVG; None while it shows none."""
+        qr_codes = self.mitid_client.get_current_qr_codes() if self.mitid_client is not None else None
         if not qr_codes:
             return None
+        return self._qr_to_svg(qr_codes[0]), self._qr_to_svg(qr_codes[1])
 
-        qr1, qr2 = qr_codes
-        return (self._qr_to_svg(qr1), self._qr_to_svg(qr2))
-
-    def _qr_to_svg(self, qr_code):
-        """Convert QR code object to SVG string."""
+    @staticmethod
+    def _qr_to_svg(qr_code: qrcode.QRCode[Any]) -> str:
+        """A QR code as SVG, one unit a module."""
         matrix = qr_code.get_matrix()
         size = len(matrix)
-        cell_size = 10
-
-        svg_parts = [
-            f'<svg xmlns="http://www.w3.org/2000/svg" '
-            f'width="{size * cell_size}" height="{size * cell_size}" '
-            f'viewBox="0 0 {size} {size}">',
+        parts = [
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{size * 10}" height="{size * 10}" viewBox="0 0 {size} {size}">',
             '<rect width="100%" height="100%" fill="white"/>',
         ]
-
         for y, row in enumerate(matrix):
             for x, cell in enumerate(row):
                 if cell:
-                    svg_parts.append(
-                        f'<rect x="{x}" y="{y}" width="1" height="1" fill="black"/>'
-                    )
-
-        svg_parts.append("</svg>")
-        return "".join(svg_parts)
-
-    def login_and_save_token(self, token_file_path: str = "tokens.json") -> Dict:
-        """
-        Perform login and save token information to a JSON file.
-
-        Args:
-            token_file_path: Path where to save the token JSON file (default: "tokens.json")
-
-        Returns:
-            Dict containing authentication result and token information
-
-        Raises:
-            AulaAuthenticationError: If login fails
-            IOError: If unable to save token file
-        """
-        self.log(f"Starting login flow with token save to: {token_file_path}")
-
-        try:
-            # Perform authentication
-            auth_result = self.authenticate()
-
-            if not auth_result.get("success"):
-                raise AulaAuthenticationError("Authentication flow did not succeed")
-
-            # Prepare token data with metadata
-            token_data = {
-                "timestamp": time.time(),
-                "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "username": self.mitid_username,
-                "auth_method": self.auth_method,
-                "tokens": auth_result["tokens"],
-                "client_info": {
-                    "client_id": self.client_id_level_3,
-                    "scope": self.scope,
-                },
-            }
-
-            # Add expiration information if available
-            if "expires_in" in auth_result["tokens"]:
-                expires_at = time.time() + auth_result["tokens"]["expires_in"]
-                token_data["expires_at"] = expires_at
-                token_data["expires_at_readable"] = time.strftime(
-                    "%Y-%m-%d %H:%M:%S", time.localtime(expires_at)
-                )
-
-            # Save to file
-            token_path = Path(token_file_path)
-            token_path.parent.mkdir(parents=True, exist_ok=True)
-
-            with open(token_path, "w") as f:
-                json.dump(token_data, f, indent=2)
-
-            self.log(f" Token data saved successfully to: {token_file_path}")
-
-            return {
-                "success": True,
-                "token_file": str(token_path),
-                "tokens": auth_result["tokens"],
-                "expires_at": token_data.get("expires_at"),
-                "profile_data": auth_result.get("profile_data"),
-            }
-
-        except Exception as e:
-            self.log(f"Login and save failed: {str(e)}", "ERROR")
-            raise
-
-    def get_valid_token(self, token_file_path: str = "tokens.json") -> Optional[Dict]:
-        """
-        Check for existing token, validate it, and return it if valid.
-        If token is expired but refresh token is available, attempt to renew.
-        If renewal fails or no valid token exists, return None.
-
-        Args:
-            token_file_path: Path to the token JSON file (default: "tokens.json")
-
-        Returns:
-            Dict containing valid token information, or None if no valid token available
-        """
-        self.log(f"Checking for valid token in: {token_file_path}")
-
-        token_path = Path(token_file_path)
-
-        # Check if token file exists
-        if not token_path.exists():
-            self.log(f"Token file does not exist: {token_file_path}")
-            return None
-
-        try:
-            # Load token data
-            with open(token_path, "r") as f:
-                token_data = json.load(f)
-
-            # Validate token data structure
-            if not isinstance(token_data, dict) or "tokens" not in token_data:
-                self.log("Invalid token file format", "WARN")
-                return None
-
-            tokens = token_data["tokens"]
-            if not tokens.get("access_token"):
-                self.log("No access token found in file", "WARN")
-                return None
-
-            # Set the tokens in the client
-            self.tokens = tokens
-
-            # Check if token is expired using file metadata
-            if "expires_at" in token_data:
-                current_time = time.time()
-                if current_time >= token_data["expires_at"]:
-                    self.log("Token expired according to file metadata")
-                    return self._attempt_token_renewal(token_data, token_path)
-
-            # Check token validity by examining JWT payload
-            token_check = self.check_token_expiration()
-
-            if token_check.get("valid"):
-                expires_in = token_check.get("expires_in", 0)
-                self.log(f" Token is valid! Expires in {int(expires_in)} seconds")
-
-                # Test actual token validity with API call
-                if self.test_token_validity():
-                    return {
-                        "success": True,
-                        "tokens": tokens,
-                        "source": "cached",
-                        "expires_in": expires_in,
-                        "expires_at": token_check.get("expires_at"),
-                        "cached_data": token_data,
-                    }
-                else:
-                    self.log("Token failed API validation test")
-                    return self._attempt_token_renewal(token_data, token_path)
-            else:
-                self.log(
-                    f"Token not valid: {token_check.get('reason', 'Unknown reason')}"
-                )
-                return self._attempt_token_renewal(token_data, token_path)
-
-        except (json.JSONDecodeError, IOError) as e:
-            self.log(f"Error reading token file: {str(e)}", "ERROR")
-            return None
-        except Exception as e:
-            self.log(f"Unexpected error during token validation: {str(e)}", "ERROR")
-            return None
-
-    def _attempt_token_renewal(
-        self, token_data: Dict, token_path: Path
-    ) -> Optional[Dict]:
-        """
-        Attempt to renew the token using refresh token.
-
-        Args:
-            token_data: Original token data from file
-            token_path: Path to token file
-
-        Returns:
-            Dict with renewed token info, or None if renewal fails
-        """
-        self.log("Attempting token renewal...")
-
-        if not token_data["tokens"].get("refresh_token"):
-            self.log("No refresh token available for renewal")
-            return None
-
-        try:
-            # Attempt renewal
-            if self.renew_access_token():
-                self.log("Token renewed successfully")
-
-                # Update token data with new tokens
-                token_data["tokens"] = self.tokens
-                token_data["renewed_at"] = time.time()
-                token_data["renewed_at_readable"] = time.strftime("%Y-%m-%d %H:%M:%S")
-
-                # Update expiration info
-                if "expires_in" in self.tokens:
-                    expires_at = time.time() + self.tokens["expires_in"]
-                    token_data["expires_at"] = expires_at
-                    token_data["expires_at_readable"] = time.strftime(
-                        "%Y-%m-%d %H:%M:%S", time.localtime(expires_at)
-                    )
-
-                # Save updated tokens
-                with open(token_path, "w") as f:
-                    json.dump(token_data, f, indent=2)
-
-                self.log(f"Updated token file saved: {token_path}")
-
-                return {
-                    "success": True,
-                    "tokens": self.tokens,
-                    "source": "renewed",
-                    "expires_in": self.tokens.get("expires_in"),
-                    "expires_at": token_data.get("expires_at"),
-                    "cached_data": token_data,
-                }
-            else:
-                self.log("Token renewal failed")
-                return None
-
-        except Exception as e:
-            self.log(f"Token renewal failed with exception: {str(e)}", "ERROR")
-            return None
+                    parts.append(f'<rect x="{x}" y="{y}" width="1" height="1" fill="black"/>')
+        parts.append("</svg>")
+        return "".join(parts)
 
     @property
-    def access_token(self) -> Optional[str]:
-        """Get the current access token"""
+    def access_token(self) -> str | None:
+        """The access token, None before a login."""
         return self.tokens.get("access_token") if self.tokens else None
 
     @property
-    def refresh_token(self) -> Optional[str]:
-        """Get the current refresh token"""
+    def refresh_token(self) -> str | None:
+        """The refresh token, None before a login."""
         return self.tokens.get("refresh_token") if self.tokens else None
 
     def is_authenticated(self) -> bool:
-        """Check if the client has valid tokens"""
+        """Whether there is an access token."""
         return bool(self.tokens and self.tokens.get("access_token"))
-
-    def get_current_qr_codes(self):
-        """Get current QR codes from MitID client if available"""
-        if self.mitid_client and hasattr(self.mitid_client, "get_current_qr_codes"):
-            return self.mitid_client.get_current_qr_codes()
-        return None
-
-    def get_valid_access_token(self, token_file_path: str = "tokens.json") -> Dict:
-        """
-        Simple function to get a valid access token.
-
-        This function will:
-        1. Check if the current token is still valid
-        2. If expired, try to refresh it using the token from the JSON file
-        3. Test the token by making an actual API call
-        4. If token test fails, return a "token not valid" error
-
-        Args:
-            token_file_path: Path to the token JSON file (default: "tokens.json")
-
-        Returns:
-            Dict with structure:
-            - success: bool - Whether a valid token was obtained
-            - access_token: str - The valid access token (if success=True)
-            - error: str - Error message (if success=False)
-            - expires_in: int - Seconds until token expires (if success=True)
-        """
-        self.log("Checking for valid access token...")
-
-        try:
-            # First, try to get a valid token from cache/file
-            token_result = self.get_valid_token(token_file_path)
-            if token_result and token_result.get("success"):
-                # Double-check by actually testing the token with an API call
-                self.log("Testing token validity with API call...")
-                if self.test_token_validity():
-                    self.log("Token validation successful")
-                    return {
-                        "success": True,
-                        "access_token": token_result["tokens"]["access_token"],
-                        "expires_in": token_result.get("expires_in", 0),
-                        "source": token_result.get("source", "unknown"),
-                    }
-                else:
-                    self.log("Token failed API validation test")
-                    return {
-                        "success": False,
-                        "error": "Token exists but failed API validation test",
-                        "details": "Token was found and appears valid but failed when tested against the API",
-                    }
-            else:
-                self.log("Unable to obtain valid token")
-                return {
-                    "success": False,
-                    "error": "Token not valid and could not be refreshed",
-                    "details": "Either no token file exists, token is expired and refresh failed, or no refresh token available",
-                }
-
-        except Exception as e:
-            self.log(f"Exception while getting valid token: {str(e)}", "ERROR")
-            return {
-                "success": False,
-                "error": f"Exception occurred: {str(e)}",
-                "details": "An unexpected error occurred while trying to get a valid token",
-            }

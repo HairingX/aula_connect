@@ -1,3 +1,5 @@
+"""The login to Aula through MitID."""
+
 from .client import AulaLoginClient
 from .exceptions import (
     AulaAuthenticationError,
