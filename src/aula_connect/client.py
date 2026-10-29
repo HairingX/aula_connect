@@ -58,6 +58,11 @@ class AulaClient:
         self._proxy = AulaProxyClient(session, access_token, username_for_meebook=mitid_username)
         self._proxy.set_token_refresh_callback(self._force_refresh_access_token)
 
+    @property
+    def api(self) -> AulaProxyClient:
+        """The client of Aula's API this client reads through."""
+        return self._proxy
+
     async def connection_check(self) -> None:
         """
         Attempts to log in using the proxy with token-based auth.
