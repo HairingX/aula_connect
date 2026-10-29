@@ -23,6 +23,7 @@ from .api.module import (
 )
 from .api.aula_errors import AulaCredentialError
 from .login import AulaLoginClient
+from .redact import redact
 from .login.exceptions import NetworkError, TokenExpiredError
 
 _LOGGER = logging.getLogger(__name__)
@@ -129,8 +130,8 @@ class AulaClient:
                 ) from err
             except (NetworkError, OSError) as err:
                 # Transient network failure — don't trigger reauth, let coordinator retry
-                _LOGGER.warning("Network error during token refresh: %s", err)
-                raise ConnectionError(f"Network error during token refresh: {err}") from err
+                _LOGGER.warning("Network error during token refresh: %s", redact(err))
+                raise ConnectionError(f"Network error during token refresh: {redact(err)}") from None
 
             if not success:
                 # renew_access_token() returns False for transient issues (malformed

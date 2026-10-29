@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Iterable, List, cast
 from datetime import datetime, timedelta, date, timezone
 import json
 import logging
-import re
+from ..redact import redact
 from .aula_errors import AulaCredentialError, AulaApiError
 from .models.constants import AulaWidgetId
 from .models.module import *
@@ -47,13 +47,6 @@ RECOVERY_COOLDOWN = timedelta(minutes=10)
 """Minimum interval between full recovery attempts. During a persistent Aula
 outage, repeated recoveries only churn the OAuth token endpoint without
 fixing anything. After one failed recovery, wait this long before trying again."""
-
-_ACCESS_TOKEN_PATTERN = re.compile(r'access_token=[^&\s]*')
-
-def _redact_url(url: Any) -> str:
-    """Strip access_token from a URL for safe logging."""
-    return _ACCESS_TOKEN_PATTERN.sub('access_token=REDACTED', str(url))
-
 
 def _describe_token(token: 'AulaToken | None') -> str:
     """Produce a diagnostic description of a widget token for log messages.
@@ -331,7 +324,7 @@ class AulaProxyClient:
                 json=json.loads(post_data),
                 verify=True,
             )
-        _LOGGER.debug(response.text)
+        _LOGGER.debug("custom_api_call: HTTP %s", response.status_code)
         try:
             responsedata = response.json()
         except (json.JSONDecodeError, ValueError):
@@ -436,8 +429,7 @@ class AulaProxyClient:
                     try:
                         widgets = AulaProfileParser.parse_widgets([widgetconfdata["widget"] for widgetconfdata in detected_widgetsdata])
                     except Exception as e:
-                        _LOGGER.info(f"method={api_method_context} response: {responsedata_context}")
-                        _LOGGER.error(f"Error parsing widgets: {e}")
+                        _LOGGER.error("Error parsing widgets: %s", type(e).__name__)
                 except (json.JSONDecodeError, KeyError, TypeError) as e:
                     _LOGGER.warning(f"Failed to parse {api_method_context} response: {e}")
 
@@ -461,8 +453,7 @@ class AulaProxyClient:
                 except (json.JSONDecodeError, KeyError, TypeError) as e:
                     _LOGGER.warning(f"Failed to parse {api_method_masterdata} response: {e}")
                 except Exception as e:
-                    _LOGGER.info(f"method={api_method_masterdata} response: {response.text}")
-                    _LOGGER.error(f"Error assigning main groups: {e}")
+                    _LOGGER.error("Error assigning main groups: %s", type(e).__name__)
 
         result = AulaLoginData(
             profiles = profiles,
@@ -500,15 +491,14 @@ class AulaProxyClient:
         response = self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers, verify=True))
         if response == None or response.status_code != HTTPStatus.OK:
             if response is not None:
-                _LOGGER.error(f"Failed to retrieve birthday events for profile codes: {inst_profile_codes}. Error: {response.status_code}/{response.reason} - {response.text}. Request url: {_redact_url(response.request.url)}, Request headers: {response.request.headers}, Request body: {response.request.body}.")
+                _LOGGER.debug("Failed to retrieve birthday events: HTTP %s %s, %s", response.status_code, response.reason, redact(response.request.url))
                 self._raise_error(response)
             return []
         responsedata: AulaGetBirthdayEventsForInstitutionsResponse = response.json()
         try:
             events = AulaBirthdayParser.parse_birthday_event_response(responsedata)
         except Exception as e:
-            _LOGGER.info(f"method={api_method} response: {responsedata}")
-            _LOGGER.error(f"Error parsing birthday events: {e}")
+            _LOGGER.error("Error parsing birthday events: %s", type(e).__name__)
             raise
         # _LOGGER.debug(f"get_calendar_events: {result}")
         _LOGGER.debug(f"Fetched birthday events: {len(events)}")
@@ -549,15 +539,14 @@ class AulaProxyClient:
         response = self._retry_on_401(response, lambda: self._session.post(requesturl, json=post_data, headers=headers, verify=True))
         if response == None or response.status_code != HTTPStatus.OK:
             if response is not None:
-                _LOGGER.error(f"Failed to retrieve calendar events for profileids: {inst_profile_ids}. Error: {response.status_code}/{response.reason} - {response.text}. Request: {_redact_url(response.request.url)}.")
+                _LOGGER.debug("Failed to retrieve calendar events: HTTP %s %s, %s", response.status_code, response.reason, redact(response.request.url))
                 self._raise_error(response)
             return []
         responsedata: AulaGetEventsByProfileIdsAndResourceIdsResponse = response.json()
         try:
             events = AulaCalendarParser.parse_calendar_event_response(responsedata)
         except Exception as e:
-            _LOGGER.info(f"method={api_method} response: {responsedata}")
-            _LOGGER.error(f"Error parsing calendar events: {e}")
+            _LOGGER.error("Error parsing calendar events: %s", type(e).__name__)
             raise
         # _LOGGER.debug(f"get_calendar_events: {result}")
         _LOGGER.debug(f"Fetched calendar events: {len(events)}")
@@ -586,7 +575,7 @@ class AulaProxyClient:
         response = self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers, verify=True))
         if response == None or response.status_code != HTTPStatus.OK:
             if response is not None:
-                _LOGGER.error(f"Failed to retrieve daily overview for childids: {child_ids_as_str_list}. Error: {response.status_code}/{response.reason} - {response.text}. Request: {_redact_url(response.request.url)}.")
+                _LOGGER.debug("Failed to retrieve daily overviews: HTTP %s %s, %s", response.status_code, response.reason, redact(response.request.url))
                 self._raise_error(response)
             return []
         responsedata: AulaGetDailyOverviewResponse = response.json()
@@ -599,8 +588,7 @@ class AulaProxyClient:
                     if child.id not in overview_ids:
                         _LOGGER.warning(f"Unable to retrieve presence data from Aula from child with id {child.id}. Some data will be missing from sensor entities.")
         except Exception as e:
-            _LOGGER.info(f"method={api_method} response: {responsedata}")
-            _LOGGER.error(f"Error parsing daily overviews: {e}")
+            _LOGGER.error("Error parsing daily overviews: %s", type(e).__name__)
             raise
         # _LOGGER.debug(f"get_daily_overviews: {daily_overviews}")
         _LOGGER.debug(f"Fetched daily overviews: {len(daily_overviews)}")
@@ -625,7 +613,7 @@ class AulaProxyClient:
         response = self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers, verify=True))
         if response == None or response.status_code != HTTPStatus.OK:
             if response is not None:
-                _LOGGER.error(f"Failed to retrieve message threads. Error: {response.status_code}/{response.reason} - {response.text}. Request: {_redact_url(response.request.url)}.")
+                _LOGGER.debug("Failed to retrieve message threads: HTTP %s %s, %s", response.status_code, response.reason, redact(response.request.url))
                 self._raise_error(response)
             return []
         responsedata: AulaGetMessageThreadsResponse = response.json()
@@ -633,8 +621,7 @@ class AulaProxyClient:
         try:
             threads = AulaMessageThreadParser.parse_message_threads_response(responsedata)
         except Exception as e:
-            _LOGGER.info(f"method={api_method} response: {responsedata}")
-            _LOGGER.error(f"Error parsing message threads: {e}")
+            _LOGGER.error("Error parsing message threads: %s", type(e).__name__)
             raise
         # _LOGGER.debug(f"get_message_threads: {threads}")
         _LOGGER.debug(f"Fetched message threads: {len(threads)}")
@@ -668,15 +655,14 @@ class AulaProxyClient:
         response = self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers, verify=True))
         if response == None or response.status_code != HTTPStatus.OK:
             if response is not None:
-                _LOGGER.error(f"Failed to retrieve messages from thread: {thread.subject} (id {thread.id}). Error: {response.status_code}/{response.reason} - {response.text}. Request: {_redact_url(response.request.url)}.")
+                _LOGGER.debug("Failed to retrieve messages of a thread: HTTP %s %s, %s", response.status_code, response.reason, redact(response.request.url))
                 self._raise_error(response)
             return []
         responsedata: AulaGetMessagesForThreadResponse = response.json()
         try:
             messages = AulaMessageThreadParser.parse_messages_response(responsedata)
         except Exception as e:
-            _LOGGER.info(f"method={api_method} response: {responsedata}")
-            _LOGGER.error(f"Error parsing messages: {e}")
+            _LOGGER.error("Error parsing messages: %s", type(e).__name__)
             raise
         # _LOGGER.debug(f"get_messages: {messages}")
         _LOGGER.debug(f"Fetched messages: {len(messages)}")
@@ -707,15 +693,14 @@ class AulaProxyClient:
         response = self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers, verify=True))
         if response == None or response.status_code != HTTPStatus.OK:
             if response is not None:
-                _LOGGER.error(f"Failed to retrieve notifications from children: {child_userids_as_str_list}. Error: {response.status_code}/{response.reason} - {response.text}. Request: {_redact_url(response.request.url)}.")
+                _LOGGER.debug("Failed to retrieve notifications: HTTP %s %s, %s", response.status_code, response.reason, redact(response.request.url))
                 self._raise_error(response)
             return []
         responsedata: AulaGetNotificationsResponse = response.json()
         try:
             notifications = AulaNotificationParser.parse_notification_response(responsedata)
         except Exception as e:
-            _LOGGER.info(f"method={api_method} response: {responsedata}")
-            _LOGGER.error(f"Error parsing notifications: {e}")
+            _LOGGER.error("Error parsing notifications: %s", type(e).__name__)
             raise
         # _LOGGER.debug(f"get_notifications: {notifications}")
         _LOGGER.debug(f"Fetched notifications: {len(notifications)}")
@@ -778,7 +763,7 @@ class AulaProxyClient:
                     response = None
             if response == None or response.status_code != HTTPStatus.OK:
                 if response is not None:
-                    _LOGGER.error(f"Failed to retrieve weekly plans from children: {child_userids_as_str_list} from {from_datetime} to {to_datetime}. Error: {response.status_code}/{response.reason} - {response.text}. Request: {_redact_url(response.request.url)}.")
+                    _LOGGER.warning("Failed to retrieve weekly plans: HTTP %s %s", response.status_code, response.reason)
                     if not first_run:
                         from_datetime += timedelta(weeks=1)
                         continue
@@ -881,7 +866,7 @@ class AulaProxyClient:
                             response = None
                     if response == None or response.status_code != HTTPStatus.OK:
                         if response is not None:
-                            _LOGGER.error(f"Failed to retrieve EasyIQ weekplan for child {child.first_name}. Error: {response.status_code}/{response.reason} - {response.text}.")
+                            _LOGGER.warning("Failed to retrieve an EasyIQ weekly plan: HTTP %s %s", response.status_code, response.reason)
                             if first_run:
                                 # Widget token failure — don't trigger main session reauth
                                 if response.status_code == HTTPStatus.UNAUTHORIZED:
@@ -953,7 +938,7 @@ class AulaProxyClient:
                     response = None
             if response == None or response.status_code != HTTPStatus.OK:
                 if response is not None:
-                    _LOGGER.error(f"Failed to retrieve newsletters from children: {child_userids_as_str_list} from {from_datetime} to {to_datetime}. Error: {response.status_code}/{response.reason} - {response.text}.")
+                    _LOGGER.warning("Failed to retrieve newsletters: HTTP %s %s", response.status_code, response.reason)
                     if first_run:
                         # Widget token failure — don't trigger main session reauth
                         if response.status_code == HTTPStatus.UNAUTHORIZED:
@@ -1100,8 +1085,8 @@ class AulaProxyClient:
                         f"Force-refresh failed for widget {widgetid}: aulaToken.getAulaToken returned {detail}"
                     )
                 if response is not None:
-                    _LOGGER.warning("Failed to refresh token for widget %s: HTTP %s %s. Body: %s",
-                                    widgetid, response.status_code, response.reason, response.text[:200])
+                    _LOGGER.warning("Failed to refresh token for widget %s: HTTP %s %s",
+                                    widgetid, response.status_code, response.reason)
                 return token
             responsedata = response.json()
             data = responsedata["data"]
@@ -1113,7 +1098,7 @@ class AulaProxyClient:
                         f"non-string data (type={type(data).__name__}, value={str(data)[:200]}). "
                         f"This is an Aula server-side bug."
                     )
-                _LOGGER.warning("Widget token response for %s contained non-string data (%s), skipping: %s", widgetid, type(data).__name__, data)
+                _LOGGER.warning("Widget token response for %s contained non-string data (%s), skipping", widgetid, type(data).__name__)
                 return token
             token = AulaToken(
                 bearer_token = "Bearer " + data,
@@ -1153,7 +1138,7 @@ class AulaProxyClient:
                     f"Force-refresh failed for widget {widgetid}: aulaToken.getAulaToken raised "
                     f"{type(e).__name__}: {e}"
                 ) from e
-            _LOGGER.warning("Failed to refresh widget token for %s: %s: %s", widgetid, type(e).__name__, e)
+            _LOGGER.warning("Failed to refresh widget token for %s: %s: %s", widgetid, type(e).__name__, redact(e))
             return token
 
     def _get_token(self, widgetid:AulaWidgetId) -> AulaToken | None:
