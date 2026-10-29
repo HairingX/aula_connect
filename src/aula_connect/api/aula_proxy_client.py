@@ -1,14 +1,14 @@
 import base64
 import binascii
 import calendar
-import threading
+import asyncio
 from http import HTTPStatus
-from requests import Response, Session
-from requests.exceptions import ConnectionError as RequestsConnectionError, Timeout as RequestsTimeout
-from typing import Any, Callable, Dict, Iterable, List, cast
+import aiohttp
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, cast
 from datetime import datetime, timedelta, date, timezone
 import json
 import logging
+from ..http import HttpResponse, HttpSession
 from ..redact import redact
 from .aula_errors import AulaCredentialError, AulaApiError
 from .models.constants import AulaWidgetId
@@ -99,26 +99,20 @@ def _decode_jwt_exp(jwt_token: str) -> datetime | None:
         _LOGGER.debug("Could not decode JWT exp claim (%s): %s", type(e).__name__, e)
         return None
 
-class _TimeoutSession(Session):
-    """A requests.Session that applies a default timeout to all requests."""
-    def request(self, method: str, url: str, *args: Any, **kwargs: Any) -> Response:  # type: ignore[override]
-        kwargs.setdefault("timeout", REQUEST_TIMEOUT)
-        return super().request(method, url, *args, **kwargs)
-
-
-class _TokenSession(_TimeoutSession):
-    """A session that appends access_token to Aula API URLs and handles CSRF optionally."""
+class _TokenSession(HttpSession):
+    """A session that appends the access token to Aula API URLs."""
 
     _access_token: str = ""
+    api_base: str = API
 
     def set_access_token(self, token: str) -> None:
         self._access_token = token
 
-    def request(self, method: str, url: str, *args: Any, **kwargs: Any) -> Response:  # type: ignore[override]
-        if self._access_token and API in url:
+    async def request(self, method: str, url: str, **kwargs: Any) -> HttpResponse:
+        if self._access_token and self.api_base in url:
             separator = "&" if "?" in url else "?"
             url = f"{url}{separator}access_token={self._access_token}"
-        return super().request(method, url, *args, **kwargs)
+        return await super().request(method, url, **kwargs)
 
 
 class AulaProxyClient:
@@ -130,21 +124,24 @@ class AulaProxyClient:
     _apiurl:str = ""
     _username:str = ""
     _session:_TokenSession
-    _token_refresh_callback: Callable[[], bool] | None = None
+    _token_refresh_callback: Callable[[], Awaitable[bool]] | None = None
     _last_recovery_at: datetime | None = None
 
-    def __init__(self, access_token: str, username_for_meebook: str = ""):
+    def __init__(self, session: aiohttp.ClientSession, access_token: str, username_for_meebook: str = ""):
         self._username = username_for_meebook
-        self._session = _TokenSession()
+        self._session = _TokenSession(session, timeout=REQUEST_TIMEOUT)
         self._session.set_access_token(access_token)
+        self.meebook_api = MEEBOOK_API
+        self.easyiq_api = EASYIQ_API
+        self.min_uddannelse_api = MIN_UDDANNELSE_API
         self._tokens = dict()
         # Serialize widget token refreshes so two coordinator threads can't
         # both make HTTP roundtrips for the same widget simultaneously.
         # Also serializes _full_recovery() to prevent two widgets both doing
         # session reset + OAuth refresh + login concurrently.
-        self._token_refresh_lock = threading.Lock()
+        self._token_refresh_lock = asyncio.Lock()
 
-    def set_token_refresh_callback(self, callback: Callable[[], bool]) -> None:
+    def set_token_refresh_callback(self, callback: Callable[[], Awaitable[bool]]) -> None:
         """Set a callback that force-refreshes the OAuth access_token.
 
         The callback handles the OAuth bearer token (used in ?access_token=...
@@ -166,12 +163,16 @@ class AulaProxyClient:
         """
         self._token_refresh_callback = callback
 
+    def use_api(self, api_base: str) -> None:
+        """Send the Aula API requests to `api_base`, followed by the version, as for a test server."""
+        self._session.api_base = api_base
+
     def update_token(self, new_token: str) -> None:
         """Update the access token used for API calls."""
         self._session.set_access_token(new_token)
 
     @staticmethod
-    def _is_widget_token_expired_body(response: Response | None) -> bool:
+    def _is_widget_token_expired_body(response: HttpResponse | None) -> bool:
         """Detect Aula's 'token expired' signal embedded in a 200 OK body.
 
         Aula occasionally returns HTTP 200 with body
@@ -192,7 +193,7 @@ class AulaProxyClient:
             return False
         return "expired" in msg.lower()
 
-    def _full_recovery(self, widgetid: AulaWidgetId) -> AulaToken | None:
+    async def _full_recovery(self, widgetid: AulaWidgetId) -> AulaToken | None:
         """Full recovery sequence when a widget endpoint reports the JWT
         as expired: drop cookies + refresh OAuth access_token + re-warm
         Aula session + fetch a fresh widget JWT.
@@ -211,7 +212,7 @@ class AulaProxyClient:
         Serialized via _token_refresh_lock for thread safety with other
         coordinator threads doing concurrent widget calls.
         """
-        with self._token_refresh_lock:
+        async with self._token_refresh_lock:
             now = datetime.now(timezone.utc)
             # Cooldown: skip recovery if we just did one. During a persistent
             # Aula outage, repeated recovery attempts only spin the OAuth token
@@ -234,7 +235,7 @@ class AulaProxyClient:
             # on the new proxy session). Lets AulaCredentialError propagate so
             # genuine credential failures still trigger HA reauth.
             if self._token_refresh_callback is not None:
-                if not self._token_refresh_callback():
+                if not await self._token_refresh_callback():
                     _LOGGER.warning(
                         "OAuth access_token refresh returned False during widget recovery — "
                         "continuing anyway with the existing token",
@@ -243,7 +244,7 @@ class AulaProxyClient:
             # AND, since reset_session cleared _login_result, full bootstrap
             # including getProfileContext + getProfileMasterData).
             try:
-                self.login()
+                await self.login()
             except Exception as login_err:
                 _LOGGER.warning("login() after session reset failed during widget recovery: %s", login_err)
                 # Continue — getAulaToken might still work if cookies were partially set
@@ -251,7 +252,7 @@ class AulaProxyClient:
             # We pass through _refresh_token (which would normally take the lock)
             # but we already hold _token_refresh_lock. Use _refresh_token_locked
             # directly to avoid deadlock.
-            return self._refresh_token_locked(widgetid, force=True)
+            return await self._refresh_token_locked(widgetid, force=True)
 
     def reset_session(self) -> None:
         """Discard the HTTP session and start fresh.
@@ -263,7 +264,7 @@ class AulaProxyClient:
         JWT no matter how many times we re-call aulaToken.getAulaToken
         with the same cookies — even with a refreshed access_token.
 
-        Rebuilding requests.Session drops the cookie jar and forces Aula
+        Clearing the session's cookie jar forces Aula
         to mint a brand-new server session (and therefore a fresh widget
         JWT) on the next request. This is the ONLY known client-side
         workaround for Aula's stale-JWT bug.
@@ -271,14 +272,7 @@ class AulaProxyClient:
         All cached widget tokens are also cleared because they were minted
         against the now-discarded server session.
         """
-        current_token = getattr(self._session, "_access_token", "")
-        try:
-            self._session.close()
-        except Exception:  # noqa: BLE001 — closing failures must not block reset
-            pass
-        self._session = _TokenSession()
-        if current_token:
-            self._session.set_access_token(current_token)
+        self._session.clear_cookies()
         # Mark logged-in as False so any next login() call re-warms the session
         self._is_logged_in = False
         # Clear cached login result so next login() does FULL bootstrap
@@ -291,16 +285,13 @@ class AulaProxyClient:
         self._tokens.clear()
         _LOGGER.info("HTTP session reset (cookies dropped, widget cache cleared, login state reset)")
 
-    def close(self) -> None:
-        """Close the HTTP session."""
-        self._session.close()
 
 
     def _get_csrf_token(self) -> str | None:
         """Get CSRF token from session cookies, or None if not available (token-based auth)."""
         return self._session.cookies.get_dict().get("Csrfp-Token")
 
-    def custom_api_call(self, uri:str, post_data:str|None) -> Dict[str,str]:
+    async def custom_api_call(self, uri:str, post_data:str|None) -> Dict[str,str]:
         headers: Dict[str, str] = {"content-type": "application/json"}
         csrf_token = self._get_csrf_token()
         if csrf_token:
@@ -308,7 +299,7 @@ class AulaProxyClient:
         url = self._apiurl + uri
         _LOGGER.debug(f"custom_api_call: Making API call to {url}")
         if post_data == None:
-            response = self._session.get(url, headers=headers, verify=True)
+            response = await self._session.get(url, headers=headers)
         else:
             try:
                 # Check if post_data is valid JSON
@@ -318,11 +309,10 @@ class AulaProxyClient:
                 error_msg = {"result": "Fail - invalid json supplied as post_data"}
                 return error_msg
             _LOGGER.debug("custom_api_call: post_data:" + post_data)
-            response = self._session.post(
+            response = await self._session.post(
                 url,
                 headers=headers,
                 json=json.loads(post_data),
-                verify=True,
             )
         _LOGGER.debug("custom_api_call: HTTP %s", response.status_code)
         try:
@@ -332,7 +322,7 @@ class AulaProxyClient:
         return responsedata
 
 
-    def login(self) -> AulaLoginData:
+    async def login(self) -> AulaLoginData:
         """
         Verifies token-based authentication and retrieves user profiles.
 
@@ -350,11 +340,11 @@ class AulaProxyClient:
         self._is_logged_in = False
         if self._session and self._apiurl:
             try:
-                login_response = self._session.get(self._apiurl + "?method=profiles.getProfilesByLogin", verify=True)
+                login_response = await self._session.get(self._apiurl + "?method=profiles.getProfilesByLogin")
                 if login_response.status_code == HTTPStatus.OK:
                     login_responsedata = login_response.json()
                     self._is_logged_in = login_responsedata["status"]["message"] == "OK"
-            except (json.JSONDecodeError, KeyError, RequestsTimeout, RequestsConnectionError) as e:
+            except (json.JSONDecodeError, KeyError, TimeoutError, aiohttp.ClientError) as e:
                 _LOGGER.debug("Quick login check failed, will proceed with full login: %s", e)
 
         _LOGGER.debug(f"Logged in already? {self._is_logged_in}")
@@ -367,7 +357,7 @@ class AulaProxyClient:
         while profiles == original_profiles:
             self._apiurl = self._get_aula_api()
             _LOGGER.debug(f"Trying API at {self._apiurl}")
-            api_response = self._session.get(f"{self._apiurl}?method=profiles.getProfilesByLogin", verify=True)
+            api_response = await self._session.get(f"{self._apiurl}?method=profiles.getProfilesByLogin")
             # _LOGGER.debug(f"Result from {api_response.url}: {api_response.text}")
             if api_response.status_code == HTTPStatus.OK:
                 api_responsedata:AulaGetProfilesByLoginResponse = api_response.json()
@@ -400,7 +390,7 @@ class AulaProxyClient:
         if len(profiles) > 0:
             # PROFILE CONTEXT (widgets & set user ids on profiles and children)
             api_method_context = "profiles.getProfileContext"
-            response =  self._session.get(f"{self._apiurl}?method={api_method_context}&portalrole=guardian",verify=True)
+            response =  await self._session.get(f"{self._apiurl}?method={api_method_context}&portalrole=guardian")
             if response.status_code == HTTPStatus.FORBIDDEN:
                 raise AulaCredentialError(f"Access denied for {api_method_context}")
             if response.status_code != HTTPStatus.OK:
@@ -437,7 +427,7 @@ class AulaProxyClient:
             # PROFILE MASTER DATA (set master group on children)
             api_method_masterdata = "profiles.getProfileMasterData"
             inst_profile_ids = list(set(str(institution_profile.id) for profile in profiles for institution_profile in profile.institution_profiles))
-            response = self._session.get(f"{self._apiurl}?method={api_method_masterdata}&instProfileIds[]={"&instProfileIds[]=".join(inst_profile_ids)}&fromAdministration=false",verify=True)
+            response = await self._session.get(f"{self._apiurl}?method={api_method_masterdata}&instProfileIds[]={"&instProfileIds[]=".join(inst_profile_ids)}&fromAdministration=false")
             if response.status_code != HTTPStatus.OK:
                 _LOGGER.warning(f"Failed to fetch {api_method_masterdata}: HTTP {response.status_code}, master group data may be missing")
             else:
@@ -467,7 +457,7 @@ class AulaProxyClient:
         return result
 
 
-    def get_birthday_events(self, profiles: List[AulaChildProfile], start_datetime: datetime, end_datetime: datetime) -> List[AulaBirthdayEvent]:
+    async def get_birthday_events(self, profiles: List[AulaChildProfile], start_datetime: datetime, end_datetime: datetime) -> List[AulaBirthdayEvent]:
         _LOGGER.debug(f"Fetching birthday events for {len(profiles)} profiles from {start_datetime} to {end_datetime}")
         if len(profiles) == 0: return []
         inst_profile_codes = list(set(profile.institution_code for profile in profiles))
@@ -479,16 +469,16 @@ class AulaProxyClient:
         requesturl: str = f"{self._apiurl}?method={api_method}&start={start}&end={end}&instCodes[]={str.join("&instCodes[]=", inst_profile_codes)}"
 
         # _LOGGER.debug("Calendar post-data: "+str(post_data))
-        response: Response|None = None
+        response: HttpResponse|None = None
         for attempt in range(1, REQUEST_MAX_ATTEMPTS+1):
             try:
-                response = self._session.get(requesturl, headers=headers, verify=True)
-            except (RequestsTimeout, RequestsConnectionError) as e:
+                response = await self._session.get(requesturl, headers=headers)
+            except (TimeoutError, aiohttp.ClientError) as e:
                 self._handle_request_exception(e, attempt, api_method)
                 continue
             if not self._should_retry_request(response, attempt):
                 break
-        response = self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers, verify=True))
+        response = await self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers))
         if response == None or response.status_code != HTTPStatus.OK:
             if response is not None:
                 _LOGGER.debug("Failed to retrieve birthday events: HTTP %s %s, %s", response.status_code, response.reason, redact(response.request.url))
@@ -505,7 +495,7 @@ class AulaProxyClient:
         return events
 
 
-    def get_calendar_events(self, profiles: List[AulaInstitutionProfile], start_datetime: datetime, end_datetime: datetime) -> List[AulaCalendarEvent]:
+    async def get_calendar_events(self, profiles: List[AulaInstitutionProfile], start_datetime: datetime, end_datetime: datetime) -> List[AulaCalendarEvent]:
         _LOGGER.debug(f"Fetching calendar events for {len(profiles)} profiles from {start_datetime} to {end_datetime}")
         if len(profiles) == 0: return []
         inst_profile_ids = list(set(profile.id for profile in profiles))
@@ -527,16 +517,16 @@ class AulaProxyClient:
         requesturl: str = f"{self._apiurl}?method={api_method}"
 
         # _LOGGER.debug("Calendar post-data: "+str(post_data))
-        response: Response|None = None
+        response: HttpResponse|None = None
         for attempt in range(1, REQUEST_MAX_ATTEMPTS+1):
             try:
-                response = self._session.post(requesturl, json=post_data, headers=headers, verify=True)
-            except (RequestsTimeout, RequestsConnectionError) as e:
+                response = await self._session.post(requesturl, json=post_data, headers=headers)
+            except (TimeoutError, aiohttp.ClientError) as e:
                 self._handle_request_exception(e, attempt, api_method)
                 continue
             if not self._should_retry_request(response, attempt):
                 break
-        response = self._retry_on_401(response, lambda: self._session.post(requesturl, json=post_data, headers=headers, verify=True))
+        response = await self._retry_on_401(response, lambda: self._session.post(requesturl, json=post_data, headers=headers))
         if response == None or response.status_code != HTTPStatus.OK:
             if response is not None:
                 _LOGGER.debug("Failed to retrieve calendar events: HTTP %s %s, %s", response.status_code, response.reason, redact(response.request.url))
@@ -553,7 +543,7 @@ class AulaProxyClient:
         return events
 
 
-    def get_daily_overviews(self, profiles: List[AulaProfile]) -> List[AulaDailyOverview]:
+    async def get_daily_overviews(self, profiles: List[AulaProfile]) -> List[AulaDailyOverview]:
         _LOGGER.debug(f"Fetching daily overviews for {len(profiles)} profiles")
         if len(profiles) == 0: return []
         children = self.flatten_children(profiles)
@@ -563,16 +553,16 @@ class AulaProxyClient:
         headers:Dict[str, str]|None = None
         requesturl: str = f"{self._apiurl}?method={api_method}&childIds[]={str.join("&childIds[]=", child_ids_as_str_list)}"
 
-        response: Response|None = None
+        response: HttpResponse|None = None
         for attempt in range(1, REQUEST_MAX_ATTEMPTS+1):
             try:
-                response = self._session.get(requesturl, headers=headers, verify=True)
-            except (RequestsTimeout, RequestsConnectionError) as e:
+                response = await self._session.get(requesturl, headers=headers)
+            except (TimeoutError, aiohttp.ClientError) as e:
                 self._handle_request_exception(e, attempt, api_method)
                 continue
             if not self._should_retry_request(response, attempt):
                 break
-        response = self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers, verify=True))
+        response = await self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers))
         if response == None or response.status_code != HTTPStatus.OK:
             if response is not None:
                 _LOGGER.debug("Failed to retrieve daily overviews: HTTP %s %s, %s", response.status_code, response.reason, redact(response.request.url))
@@ -595,22 +585,22 @@ class AulaProxyClient:
         return daily_overviews
 
 
-    def get_message_threads(self) -> List[AulaMessageThread]:
+    async def get_message_threads(self) -> List[AulaMessageThread]:
         _LOGGER.debug(f"Fetching message threads")
         api_method = "messaging.getThreads"
         headers:Dict[str, str]|None = None
         requesturl: str = f"{self._apiurl}?method={api_method}&sortOn=date&orderDirection=desc&page=0"
 
-        response: Response|None = None
+        response: HttpResponse|None = None
         for attempt in range(1, REQUEST_MAX_ATTEMPTS+1):
             try:
-                response = self._session.get(requesturl, headers=headers, verify=True)
-            except (RequestsTimeout, RequestsConnectionError) as e:
+                response = await self._session.get(requesturl, headers=headers)
+            except (TimeoutError, aiohttp.ClientError) as e:
                 self._handle_request_exception(e, attempt, api_method)
                 continue
             if not self._should_retry_request(response, attempt):
                 break
-        response = self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers, verify=True))
+        response = await self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers))
         if response == None or response.status_code != HTTPStatus.OK:
             if response is not None:
                 _LOGGER.debug("Failed to retrieve message threads: HTTP %s %s, %s", response.status_code, response.reason, redact(response.request.url))
@@ -628,7 +618,7 @@ class AulaProxyClient:
         return threads
 
 
-    def get_messages(self, thread: AulaMessageThread) -> List[AulaMessage]:
+    async def get_messages(self, thread: AulaMessageThread) -> List[AulaMessage]:
         """
         Retrieve messages from a specified thread.
 
@@ -643,16 +633,16 @@ class AulaProxyClient:
         headers:Dict[str, str]|None = None
         requesturl: str = f"{self._apiurl}?method={api_method}&threadId={thread.id}&page=0"
 
-        response: Response|None = None
+        response: HttpResponse|None = None
         for attempt in range(1, REQUEST_MAX_ATTEMPTS+1):
             try:
-                response = self._session.get(requesturl, headers=headers, verify=True)
-            except (RequestsTimeout, RequestsConnectionError) as e:
+                response = await self._session.get(requesturl, headers=headers)
+            except (TimeoutError, aiohttp.ClientError) as e:
                 self._handle_request_exception(e, attempt, api_method)
                 continue
             if not self._should_retry_request(response, attempt):
                 break
-        response = self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers, verify=True))
+        response = await self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers))
         if response == None or response.status_code != HTTPStatus.OK:
             if response is not None:
                 _LOGGER.debug("Failed to retrieve messages of a thread: HTTP %s %s, %s", response.status_code, response.reason, redact(response.request.url))
@@ -669,7 +659,7 @@ class AulaProxyClient:
         return messages
 
 
-    def get_notifications(self, profiles: List[AulaChildProfile]) -> List[AULA_NOTIFICATION_TYPES]:
+    async def get_notifications(self, profiles: List[AulaChildProfile]) -> List[AULA_NOTIFICATION_TYPES]:
         """Returns a list of notifications"""
         _LOGGER.debug(f"Fetching notifications for {len(profiles)} profiles")
         if len(profiles) == 0: return []
@@ -681,16 +671,16 @@ class AulaProxyClient:
         headers: Dict[str, str] = self._get_aula_header()
         requesturl: str = f"{self._get_aula_api()}?method={api_method}&activeChildrenIds[]={str.join("&activeChildrenIds[]=",child_userids_as_str_list)}&activeInstitutionCodes[]={str.join("&activeInstitutionCodes[]=",institution_profile_codes)}"
 
-        response: Response|None = None
+        response: HttpResponse|None = None
         for attempt in range(1, REQUEST_MAX_ATTEMPTS+1):
             try:
-                response = self._session.get(requesturl, headers=headers, verify=True)
-            except (RequestsTimeout, RequestsConnectionError) as e:
+                response = await self._session.get(requesturl, headers=headers)
+            except (TimeoutError, aiohttp.ClientError) as e:
                 self._handle_request_exception(e, attempt, api_method)
                 continue
             if not self._should_retry_request(response, attempt):
                 break
-        response = self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers, verify=True))
+        response = await self._retry_on_401(response, lambda: self._session.get(requesturl, headers=headers))
         if response == None or response.status_code != HTTPStatus.OK:
             if response is not None:
                 _LOGGER.debug("Failed to retrieve notifications: HTTP %s %s, %s", response.status_code, response.reason, redact(response.request.url))
@@ -707,7 +697,7 @@ class AulaProxyClient:
         return notifications
 
 
-    def get_weekly_plans(self, profiles: List[AulaChildProfile], from_datetime: datetime, to_datetime: datetime) -> List[AulaWeeklyPlan]:
+    async def get_weekly_plans(self, profiles: List[AulaChildProfile], from_datetime: datetime, to_datetime: datetime) -> List[AulaWeeklyPlan]:
         """Fetches weekly plans from Meebook (widget 0004)."""
         _LOGGER.debug(f"Fetching weekplan for {len(profiles)} profiles from {from_datetime} to {to_datetime}")
         if len(profiles) == 0: return []
@@ -717,11 +707,11 @@ class AulaProxyClient:
         institution_profile_codes = list(set(child.institution_code for child in children))
 
         widgetid = AulaWidgetId.WEEKPLAN_PARENTS
-        token = self._get_token(widgetid)
+        token = await self._get_token(widgetid)
         headers: Dict[str, str] = self._get_meebook_header(token)
-        requesturl: str = f"{MEEBOOK_API}/relatedweekplan/all?currentWeekNumber={{weekno}}&userProfile=guardian&childFilter[]={str.join("&childFilter[]=",child_userids_as_str_list)}&institutionFilter[]={str.join("&institutionFilter[]=",institution_profile_codes)}"
+        requesturl: str = f"{self.meebook_api}/relatedweekplan/all?currentWeekNumber={{weekno}}&userProfile=guardian&childFilter[]={str.join("&childFilter[]=",child_userids_as_str_list)}&institutionFilter[]={str.join("&institutionFilter[]=",institution_profile_codes)}"
 
-        response: Response|None = None
+        response: HttpResponse|None = None
         weeklyplans = list[AulaWeeklyPlan]()
         from_datetime = from_datetime - timedelta(days=from_datetime.weekday()) #ensure it is a monday
         from_date = from_datetime.date()
@@ -732,8 +722,8 @@ class AulaProxyClient:
             weekno = self._get_aula_week_formatted(from_date)
             for attempt in range(1, REQUEST_MAX_ATTEMPTS+1):
                 try:
-                    response = self._session.get(requesturl.format(weekno=weekno), headers=headers, verify=True)
-                except (RequestsTimeout, RequestsConnectionError) as e:
+                    response = await self._session.get(requesturl.format(weekno=weekno), headers=headers)
+                except (TimeoutError, aiohttp.ClientError) as e:
                     self._handle_request_exception(e, attempt, "relatedweekplan")
                     continue
                 if not self._should_retry_request(response, attempt):
@@ -749,16 +739,16 @@ class AulaProxyClient:
             if response is not None and token_rejected and not has_force_refreshed:
                 _LOGGER.warning(
                     "Meebook rejected widget %s token (HTTP %s). Triggering full recovery "
-                    "(cookies + OAuth + re-warm). Rejected %s. Response body: %s",
-                    widgetid, response.status_code, _describe_token(token), response.text[:200],
+                    "(cookies + OAuth + re-warm). Rejected %s.",
+                    widgetid, response.status_code, _describe_token(token),
                 )
                 has_force_refreshed = True
                 try:
-                    token = self._full_recovery(widgetid)
+                    token = await self._full_recovery(widgetid)
                     _LOGGER.info("After full recovery: %s", _describe_token(token))
                     headers = self._get_meebook_header(token)
-                    response = self._session.get(requesturl.format(weekno=weekno), headers=headers, verify=True)
-                except (RequestsTimeout, RequestsConnectionError) as e:
+                    response = await self._session.get(requesturl.format(weekno=weekno), headers=headers)
+                except (TimeoutError, aiohttp.ClientError) as e:
                     _LOGGER.warning("Meebook retry after full recovery failed with network error: %s", e)
                     response = None
             if response == None or response.status_code != HTTPStatus.OK:
@@ -771,7 +761,7 @@ class AulaProxyClient:
                     if response.status_code == HTTPStatus.UNAUTHORIZED:
                         raise AulaApiError(
                             f"Meebook widget {widgetid} returned HTTP 401 even after full recovery "
-                            f"({_describe_token(token)}). Response: {response.text[:200]}. "
+                            f"({_describe_token(token)}). "
                             f"This is a confirmed Aula server-side issue."
                         )
                     self._raise_error(response)
@@ -779,7 +769,7 @@ class AulaProxyClient:
             responsedata = response.json()
             # Meebook may return a dict (e.g. error/expired token payload) instead of the expected list
             if not isinstance(responsedata, list):
-                _LOGGER.warning(f"Unexpected Meebook response type ({type(responsedata).__name__}) for week {weekno}, skipping: {responsedata}")
+                _LOGGER.warning("Unexpected Meebook response type (%s) for week %s, skipping", type(responsedata).__name__, weekno)
                 from_datetime += timedelta(weeks=1)
                 first_run = False
                 continue
@@ -794,28 +784,28 @@ class AulaProxyClient:
         _LOGGER.debug(f"Fetched meebook weekplan: {len(weeklyplans)}")
         return weeklyplans
 
-    def _get_guardian_user_id(self) -> str:
+    async def _get_guardian_user_id(self) -> str:
         """Get the guardian userId, from login data or by fetching from the API."""
         if self._login_result and self._login_result.profiles:
             for profile in self._login_result.profiles:
                 if profile.user_id:
                     return profile.user_id
-        response = self._session.get(f"{self._apiurl}?method=profiles.getProfileContext&portalrole=guardian", verify=True)
+        response = await self._session.get(f"{self._apiurl}?method=profiles.getProfileContext&portalrole=guardian")
         if response.status_code != HTTPStatus.OK:
             raise AulaApiError(f"Failed to fetch guardian user ID: HTTP {response.status_code}")
         responsedata = response.json()
         return responsedata["data"]["userId"]
 
-    def get_easyiq_weekly_plans(self, profiles: List[AulaChildProfile], from_datetime: datetime, to_datetime: datetime) -> List[AulaEasyiqWeeklyPlan]:
+    async def get_easyiq_weekly_plans(self, profiles: List[AulaChildProfile], from_datetime: datetime, to_datetime: datetime) -> List[AulaEasyiqWeeklyPlan]:
         """Fetches weekly plans from EasyIQ (widget 0001)."""
         _LOGGER.debug(f"Fetching EasyIQ weekplan for {len(profiles)} profiles from {from_datetime} to {to_datetime}")
         if len(profiles) == 0: return []
         if not self.has_widget(AulaWidgetId.EASYIQ_WEEKPLAN): return []
-        guardian_user_id = self._get_guardian_user_id()
+        guardian_user_id = await self._get_guardian_user_id()
         institution_profile_codes = list(set(child.institution_code for child in profiles))
 
         widgetid = AulaWidgetId.EASYIQ_WEEKPLAN
-        token = self._get_token(widgetid)
+        token = await self._get_token(widgetid)
         csrf_token = self._get_csrf_token()
 
         weeklyplans = list[AulaEasyiqWeeklyPlan]()
@@ -835,11 +825,11 @@ class AulaProxyClient:
                         "institutionFilter": [inst_code],
                         "childFilter": [child.user_id],
                     }
-                    response: Response|None = None
+                    response: HttpResponse|None = None
                     for attempt in range(1, REQUEST_MAX_ATTEMPTS+1):
                         try:
-                            response = self._session.post(EASYIQ_API + "/weekplaninfo", json=post_data, headers=headers, verify=True)
-                        except (RequestsTimeout, RequestsConnectionError) as e:
+                            response = await self._session.post(self.easyiq_api + "/weekplaninfo", json=post_data, headers=headers)
+                        except (TimeoutError, aiohttp.ClientError) as e:
                             self._handle_request_exception(e, attempt, "weekplaninfo")
                             continue
                         if not self._should_retry_request(response, attempt):
@@ -852,16 +842,16 @@ class AulaProxyClient:
                     if response is not None and token_rejected and not has_force_refreshed:
                         _LOGGER.warning(
                             "EasyIQ rejected widget %s token (HTTP %s). Triggering full recovery "
-                            "(cookies + OAuth + re-warm). Rejected %s. Response body: %s",
-                            widgetid, response.status_code, _describe_token(token), response.text[:200],
+                            "(cookies + OAuth + re-warm). Rejected %s.",
+                            widgetid, response.status_code, _describe_token(token),
                         )
                         has_force_refreshed = True
                         try:
-                            token = self._full_recovery(widgetid)
+                            token = await self._full_recovery(widgetid)
                             _LOGGER.info("After full recovery: %s", _describe_token(token))
                             headers = self._get_easyiq_header(token, inst_code, csrf_token)
-                            response = self._session.post(EASYIQ_API + "/weekplaninfo", json=post_data, headers=headers, verify=True)
-                        except (RequestsTimeout, RequestsConnectionError) as e:
+                            response = await self._session.post(self.easyiq_api + "/weekplaninfo", json=post_data, headers=headers)
+                        except (TimeoutError, aiohttp.ClientError) as e:
                             _LOGGER.warning("EasyIQ retry after full recovery failed with network error: %s", e)
                             response = None
                     if response == None or response.status_code != HTTPStatus.OK:
@@ -872,7 +862,7 @@ class AulaProxyClient:
                                 if response.status_code == HTTPStatus.UNAUTHORIZED:
                                     raise AulaApiError(
                                         f"EasyIQ widget {widgetid} returned HTTP 401 even after full recovery "
-                                        f"({_describe_token(token)}). Response: {response.text[:200]}. "
+                                        f"({_describe_token(token)}). "
                                         f"This is a confirmed Aula server-side issue."
                                     )
                                 self._raise_error(response)
@@ -887,18 +877,18 @@ class AulaProxyClient:
         _LOGGER.debug(f"Fetched easyiq weekplan: {len(weeklyplans)}")
         return weeklyplans
 
-    def get_newsletters(self, profiles: List[AulaChildProfile], from_datetime: datetime, to_datetime: datetime) -> List[AulaWeeklyNewsletter]:
+    async def get_newsletters(self, profiles: List[AulaChildProfile], from_datetime: datetime, to_datetime: datetime) -> List[AulaWeeklyNewsletter]:
         """Fetches weekly newsletters from MinUddannelse (widget 0029)."""
         _LOGGER.debug(f"Fetching newsletters for {len(profiles)} profiles from {from_datetime} to {to_datetime}")
         if len(profiles) == 0: return []
         if not self.has_widget(AulaWidgetId.MY_EDUCATION_WEEKLETTER): return []
-        guardian_user_id = self._get_guardian_user_id()
+        guardian_user_id = await self._get_guardian_user_id()
         child_userids_as_str_list = list(set(str(child.user_id) for child in profiles))
 
         widgetid = AulaWidgetId.MY_EDUCATION_WEEKLETTER
-        token = self._get_token(widgetid)
+        token = await self._get_token(widgetid)
         headers: Dict[str, str] = self._get_myeducation_header(token)
-        requesturl: str = f"{MIN_UDDANNELSE_API}/ugebrev?assuranceLevel=2&childFilter={",".join(child_userids_as_str_list)}&currentWeekNumber={{weekno}}&isMobileApp=false&placement=narrow&sessionUUID={guardian_user_id}&userProfile=guardian"
+        requesturl: str = f"{self.min_uddannelse_api}/ugebrev?assuranceLevel=2&childFilter={",".join(child_userids_as_str_list)}&currentWeekNumber={{weekno}}&isMobileApp=false&placement=narrow&sessionUUID={guardian_user_id}&userProfile=guardian"
 
         newsletters = list[AulaWeeklyNewsletter]()
         from_datetime = from_datetime - timedelta(days=from_datetime.weekday())
@@ -907,11 +897,11 @@ class AulaProxyClient:
         while from_datetime < to_datetime:
             from_date = from_datetime.date()
             weekno = self._get_aula_week_formatted(from_date)
-            response: Response|None = None
+            response: HttpResponse|None = None
             for attempt in range(1, REQUEST_MAX_ATTEMPTS+1):
                 try:
-                    response = self._session.get(requesturl.format(weekno=weekno), headers=headers, verify=True)
-                except (RequestsTimeout, RequestsConnectionError) as e:
+                    response = await self._session.get(requesturl.format(weekno=weekno), headers=headers)
+                except (TimeoutError, aiohttp.ClientError) as e:
                     self._handle_request_exception(e, attempt, "ugebrev")
                     continue
                 if not self._should_retry_request(response, attempt):
@@ -924,16 +914,16 @@ class AulaProxyClient:
             if response is not None and token_rejected and not has_force_refreshed:
                 _LOGGER.warning(
                     "MinUddannelse rejected widget %s token (HTTP %s). Triggering full recovery "
-                    "(cookies + OAuth + re-warm). Rejected %s. Response body: %s",
-                    widgetid, response.status_code, _describe_token(token), response.text[:200],
+                    "(cookies + OAuth + re-warm). Rejected %s.",
+                    widgetid, response.status_code, _describe_token(token),
                 )
                 has_force_refreshed = True
                 try:
-                    token = self._full_recovery(widgetid)
+                    token = await self._full_recovery(widgetid)
                     _LOGGER.info("After full recovery: %s", _describe_token(token))
                     headers = self._get_myeducation_header(token)
-                    response = self._session.get(requesturl.format(weekno=weekno), headers=headers, verify=True)
-                except (RequestsTimeout, RequestsConnectionError) as e:
+                    response = await self._session.get(requesturl.format(weekno=weekno), headers=headers)
+                except (TimeoutError, aiohttp.ClientError) as e:
                     _LOGGER.warning("MinUddannelse retry after full recovery failed with network error: %s", e)
                     response = None
             if response == None or response.status_code != HTTPStatus.OK:
@@ -944,7 +934,7 @@ class AulaProxyClient:
                         if response.status_code == HTTPStatus.UNAUTHORIZED:
                             raise AulaApiError(
                                 f"MinUddannelse widget {widgetid} returned HTTP 401 even after full recovery "
-                                f"({_describe_token(token)}). Response: {response.text[:200]}. "
+                                f"({_describe_token(token)}). "
                                 f"This is a confirmed Aula server-side issue."
                             )
                         self._raise_error(response)
@@ -971,7 +961,7 @@ class AulaProxyClient:
     #     result = dict[str, str]()
     #     if self.has_widget(AulaWidgetId.REMINDERS):
     #         _LOGGER.debug("In the Huskelisten flow...")
-    #         token = self._get_token(AulaWidgetId.REMINDERS)
+    #         token = await self._get_token(AulaWidgetId.REMINDERS)
     #         huskelisten_headers = self._get_aula_header(token)
 
     #         children = "&children=".join(child_ids_as_str_list)
@@ -994,8 +984,7 @@ class AulaProxyClient:
     #             response = requests.get(
     #                 SYSTEMATIC_API + get_payload,
     #                 headers=huskelisten_headers,
-    #                 verify=True,
-    #             )
+    #                 #             )
     #             try:
     #                 reminder_personsdata = json.loads(response.text, strict=False)
     #             except:
@@ -1024,13 +1013,13 @@ class AulaProxyClient:
     #     _LOGGER.debug(f"Fetched reminders: {len(result)}")
     #     return result
 
-    def _refresh_token(self, widgetid:AulaWidgetId, force: bool = False) -> AulaToken | None:
+    async def _refresh_token(self, widgetid:AulaWidgetId, force: bool = False) -> AulaToken | None:
         # Serialize: prevents two coordinator threads from both making the
         # HTTP roundtrip for the same widget simultaneously.
-        with self._token_refresh_lock:
-            return self._refresh_token_locked(widgetid, force)
+        async with self._token_refresh_lock:
+            return await self._refresh_token_locked(widgetid, force)
 
-    def _refresh_token_locked(self, widgetid:AulaWidgetId, force: bool = False) -> AulaToken | None:
+    async def _refresh_token_locked(self, widgetid:AulaWidgetId, force: bool = False) -> AulaToken | None:
         """Fetch a fresh widget JWT.
 
         Matches upstream scaarup/aula's simple behavior: fetch, cache, return.
@@ -1060,12 +1049,12 @@ class AulaProxyClient:
 
         url = f"{self._apiurl}?method=aulaToken.getAulaToken&widgetId={widgetid}"
         try:
-            response: Response | None = None
+            response: HttpResponse | None = None
             # Retry loop absorbs transient 5xx and network errors from Aula's token endpoint
             for attempt in range(1, REQUEST_MAX_ATTEMPTS + 1):
                 try:
-                    response = self._session.get(url, verify=True)
-                except (RequestsTimeout, RequestsConnectionError) as e:
+                    response = await self._session.get(url)
+                except (TimeoutError, aiohttp.ClientError) as e:
                     self._handle_request_exception(e, attempt, "aulaToken.getAulaToken")
                     continue
                 if not self._should_retry_request(response, attempt):
@@ -1073,12 +1062,12 @@ class AulaProxyClient:
             # If main Aula session returned 401 (access token expired mid-widget-refresh),
             # the callback refreshes it and we retry once. Without this, a main-session
             # hiccup during widget refresh would bubble up as a misleading widget error.
-            response = self._retry_on_401(response, lambda: self._session.get(url, verify=True))
+            response = await self._retry_on_401(response, lambda: self._session.get(url))
             if response is None or response.status_code != HTTPStatus.OK:
                 if force:
                     self._tokens.pop(widgetid, None)
                     detail = (
-                        f"HTTP {response.status_code} {response.reason}. Body: {response.text[:200]}"
+                        f"HTTP {response.status_code} {response.reason}"
                         if response is not None else "no response after retries"
                     )
                     raise AulaApiError(
@@ -1128,7 +1117,7 @@ class AulaProxyClient:
                         widgetid, token.expires_at.isoformat(), ttl,
                     )
             return token
-        except (RequestsTimeout, RequestsConnectionError, ConnectionError, json.JSONDecodeError, KeyError) as e:
+        except (TimeoutError, aiohttp.ClientError, ConnectionError, json.JSONDecodeError, KeyError) as e:
             # ConnectionError is raised by _retry_on_401 on transient main-session refresh failure.
             # AulaCredentialError is intentionally NOT caught — must propagate to trigger reauth
             # when main-session credentials are genuinely invalid.
@@ -1141,7 +1130,7 @@ class AulaProxyClient:
             _LOGGER.warning("Failed to refresh widget token for %s: %s: %s", widgetid, type(e).__name__, redact(e))
             return token
 
-    def _get_token(self, widgetid:AulaWidgetId) -> AulaToken | None:
+    async def _get_token(self, widgetid:AulaWidgetId) -> AulaToken | None:
         """Return a cached widget token if still within wall-clock cache window,
         else refresh.
 
@@ -1160,14 +1149,14 @@ class AulaProxyClient:
             if current_time - token.timestamp < TOKEN_EXPIRATION_TIME:
                 _LOGGER.debug("Reusing existing token for widget " + widgetid)
                 return token
-        return self._refresh_token(widgetid)
+        return await self._refresh_token(widgetid)
 
     def has_widget(self, widget_match: AulaWidgetId) -> bool:
         widgets = [] if self._login_result is None else self._login_result.widgets
         return any(widget.widget_id == widget_match for widget in widgets)
 
     def _get_aula_api(self) -> str:
-        return API + str(self.api_version)
+        return self._session.api_base + str(self.api_version)
 
     def _get_user_agent(self) -> str:
         # Using Firefox browser as of 2024-10 for requests, as Python somtimes are blocked from accessing websites
@@ -1287,7 +1276,7 @@ class AulaProxyClient:
         _LOGGER.debug(f"Request for {api_method} failed ({type(e).__name__}), will retry (attempt {attempt}/{REQUEST_MAX_ATTEMPTS})")
 
     @staticmethod
-    def _should_retry_request(response: Response, attempt: int) -> bool:
+    def _should_retry_request(response: HttpResponse, attempt: int) -> bool:
         if response.status_code == HTTPStatus.OK:
             return False
         # Only retry on server errors (5xx) — retrying 401 with the same token is pointless,
@@ -1299,7 +1288,7 @@ class AulaProxyClient:
                 return True
         return False
 
-    def _retry_on_401(self, response: Response | None, request_fn: Callable[[], Response]) -> Response | None:
+    async def _retry_on_401(self, response: HttpResponse | None, request_fn: Callable[[], Awaitable[HttpResponse]]) -> HttpResponse | None:
         """If response is 401, force-refresh the access token and retry once.
 
         This prevents transient 401s (e.g. token propagation delays on
@@ -1313,14 +1302,14 @@ class AulaProxyClient:
         if self._token_refresh_callback is None:
             return response
         # Callback may raise AulaCredentialError for permanent failures — let it propagate
-        if not self._token_refresh_callback():
+        if not await self._token_refresh_callback():
             # Transient refresh failure — don't let the original 401 trigger reauth
             _LOGGER.warning("Access token refresh failed (transient), returning error without reauth")
             raise ConnectionError("Access token refresh failed — could not retry after 401")
         _LOGGER.debug("Got 401, retrying after access token refresh")
         try:
-            retried = request_fn()
-        except (RequestsTimeout, RequestsConnectionError):
+            retried = await request_fn()
+        except (TimeoutError, aiohttp.ClientError):
             _LOGGER.debug("Retry after token refresh failed with network error")
             raise ConnectionError("Request failed after token refresh (network error)")
         if retried.status_code == HTTPStatus.UNAUTHORIZED:
@@ -1331,7 +1320,7 @@ class AulaProxyClient:
         return retried
 
     @staticmethod
-    def _raise_error(response: Response | None) -> None:
+    def _raise_error(response: HttpResponse | None) -> None:
         if response is None: return
         if response.ok: return
         # Safe message extraction — Aula API uses {"status": {"message": ...}}

@@ -1,8 +1,10 @@
 from typing import Callable, List
 import datetime
 import logging
+import asyncio
 import time
-import threading
+
+import aiohttp
 
 from .api.const import API_VERSION
 from .api.models.constants import AulaWidgetId
@@ -38,6 +40,7 @@ class AulaClient:
 
     def __init__(
         self,
+        session: aiohttp.ClientSession,
         access_token: str,
         refresh_token: str,
         expires_at: float,
@@ -45,41 +48,35 @@ class AulaClient:
         login_client: AulaLoginClient,
         token_update_callback: Callable[[str, str, float], None] | None = None,
     ):
-        self._access_token = access_token
-        self._refresh_token = refresh_token
-        self._expires_at = expires_at
+        self._access_token: str = access_token
+        self._refresh_token: str = refresh_token
+        self._expires_at: float = expires_at
         self._mitid_username = mitid_username
         self._login_client = login_client
         self._token_update_callback = token_update_callback
-        self._token_lock = threading.Lock()
-        self._proxy = AulaProxyClient(access_token, username_for_meebook=mitid_username)
+        self._token_lock = asyncio.Lock()
+        self._proxy = AulaProxyClient(session, access_token, username_for_meebook=mitid_username)
         self._proxy.set_token_refresh_callback(self._force_refresh_access_token)
 
-    def close(self) -> None:
-        """Close HTTP sessions."""
-        self._proxy.close()
-        if hasattr(self._login_client, 'session'):
-            self._login_client.session.close()
-
-    def connection_check(self) -> None:
+    async def connection_check(self) -> None:
         """
         Attempts to log in using the proxy with token-based auth.
         Raises:
             AulaCredentialError: If access to the Aula API is denied.
             ConnectionRefusedError: If the API URL is unreachable.
         """
-        self._ensure_valid_token()
-        self._proxy.login()
+        await self._ensure_valid_token()
+        await self._proxy.login()
         self.aula_version = self._proxy.api_version
 
     def has_widget(self, widgetid: AulaWidgetId):
         return self._proxy.has_widget(widgetid)
 
-    def login(self) -> AulaLoginData:
-        self._ensure_valid_token()
-        return self._proxy.login()
+    async def login(self) -> AulaLoginData:
+        await self._ensure_valid_token()
+        return await self._proxy.login()
 
-    def _force_refresh_access_token(self) -> bool:
+    async def _force_refresh_access_token(self) -> bool:
         """Force-refresh the access token, bypassing the expiry check.
 
         Used as a callback by AulaProxyClient when it receives a 401 from the
@@ -93,7 +90,7 @@ class AulaClient:
         """
         self._expires_at = 0  # Force the expiry check to trigger a refresh
         try:
-            self._ensure_valid_token()
+            await self._ensure_valid_token()
             return True
         except AulaCredentialError:
             raise  # Permanent credential failure — must trigger reauth
@@ -101,13 +98,13 @@ class AulaClient:
             _LOGGER.debug("Forced token refresh failed (transient)", exc_info=True)
             return False
 
-    def _ensure_valid_token(self) -> None:
-        """Check token expiration and refresh if needed. Thread-safe."""
+    async def _ensure_valid_token(self) -> None:
+        """Check token expiration and refresh if needed, once for callers that ask at the same time."""
         if time.time() < self._expires_at - TOKEN_REFRESH_BUFFER_SECONDS:
             return  # Token still valid
 
-        with self._token_lock:
-            # Double-check after acquiring lock — another thread may have refreshed
+        async with self._token_lock:
+            # Double-check after acquiring lock — another caller may have refreshed
             if time.time() < self._expires_at - TOKEN_REFRESH_BUFFER_SECONDS:
                 return
 
@@ -122,7 +119,7 @@ class AulaClient:
             }
 
             try:
-                success = self._login_client.renew_access_token()
+                success = await self._login_client.renew_access_token()
             except TokenExpiredError as err:
                 # Refresh token permanently invalid — trigger reauth
                 raise AulaCredentialError(
@@ -141,13 +138,10 @@ class AulaClient:
                 raise ConnectionError("Token refresh failed — server returned an unexpected response")
 
             # Extract all new values before updating state
-            new_access = self._login_client.tokens["access_token"]
-            new_refresh = self._login_client.tokens.get(
-                "refresh_token", self._refresh_token
-            )
-            new_expires = self._login_client.tokens.get(
-                "expires_at", time.time() + 3600
-            )
+            tokens = self._login_client.tokens or {}
+            new_access = str(tokens["access_token"])
+            new_refresh = str(tokens.get("refresh_token", self._refresh_token))
+            new_expires = float(tokens.get("expires_at", time.time() + 3600))
 
             # Update in-memory state
             self._access_token = new_access
@@ -157,69 +151,69 @@ class AulaClient:
 
             _LOGGER.debug("Token refreshed successfully, expires at %s", new_expires)
 
-            # Persist tokens (callback uses call_soon_threadsafe)
+            # Persist tokens
             if self._token_update_callback:
                 self._token_update_callback(new_access, new_refresh, new_expires)
 
-    def get_birthday_events(
+    async def get_birthday_events(
         self,
         profiles: List[AulaChildProfile],
         start_datetime: datetime.datetime,
         end_datetime: datetime.datetime,
     ) -> List[AulaBirthdayEvent]:
-        self._ensure_valid_token()
-        return self._proxy.get_birthday_events(profiles, start_datetime, end_datetime)
+        await self._ensure_valid_token()
+        return await self._proxy.get_birthday_events(profiles, start_datetime, end_datetime)
 
-    def get_daily_overviews(
+    async def get_daily_overviews(
         self, profiles: List[AulaProfile]
     ) -> List[AulaDailyOverview]:
-        self._ensure_valid_token()
-        return self._proxy.get_daily_overviews(profiles)
+        await self._ensure_valid_token()
+        return await self._proxy.get_daily_overviews(profiles)
 
-    def get_calendar_events(
+    async def get_calendar_events(
         self,
         profiles: List[AulaInstitutionProfile],
         start_datetime: datetime.datetime,
         end_datetime: datetime.datetime,
     ) -> List[AulaCalendarEvent]:
-        self._ensure_valid_token()
-        return self._proxy.get_calendar_events(profiles, start_datetime, end_datetime)
+        await self._ensure_valid_token()
+        return await self._proxy.get_calendar_events(profiles, start_datetime, end_datetime)
 
-    def get_message_threads(self) -> List[AulaMessageThread]:
-        self._ensure_valid_token()
-        return self._proxy.get_message_threads()
+    async def get_message_threads(self) -> List[AulaMessageThread]:
+        await self._ensure_valid_token()
+        return await self._proxy.get_message_threads()
 
-    def get_notifications(
+    async def get_notifications(
         self, profiles: List[AulaChildProfile]
     ) -> List[AULA_NOTIFICATION_TYPES]:
-        self._ensure_valid_token()
-        return self._proxy.get_notifications(profiles)
+        await self._ensure_valid_token()
+        return await self._proxy.get_notifications(profiles)
 
-    def get_weekly_plans(
+    async def get_weekly_plans(
         self,
         profiles: List[AulaChildProfile],
         start_datetime: datetime.datetime,
         end_datetime: datetime.datetime,
     ) -> List[AulaWeeklyPlan]:
-        self._ensure_valid_token()
-        return self._proxy.get_weekly_plans(profiles, start_datetime, end_datetime)
+        await self._ensure_valid_token()
+        return await self._proxy.get_weekly_plans(profiles, start_datetime, end_datetime)
 
-    def get_easyiq_weekly_plans(
+    async def get_easyiq_weekly_plans(
         self,
         profiles: List[AulaChildProfile],
         start_datetime: datetime.datetime,
         end_datetime: datetime.datetime,
     ) -> List[AulaEasyiqWeeklyPlan]:
-        self._ensure_valid_token()
-        return self._proxy.get_easyiq_weekly_plans(
+        await self._ensure_valid_token()
+        return await self._proxy.get_easyiq_weekly_plans(
             profiles, start_datetime, end_datetime
         )
 
-    def get_newsletters(
+    async def get_newsletters(
         self,
         profiles: List[AulaChildProfile],
         start_datetime: datetime.datetime,
         end_datetime: datetime.datetime,
     ) -> List[AulaWeeklyNewsletter]:
-        self._ensure_valid_token()
-        return self._proxy.get_newsletters(profiles, start_datetime, end_datetime)
+        await self._ensure_valid_token()
+        return await self._proxy.get_newsletters(profiles, start_datetime, end_datetime)

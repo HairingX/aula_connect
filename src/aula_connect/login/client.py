@@ -5,7 +5,7 @@ This module contains the main AulaLoginClient class that handles the complete
 authentication flow including OAuth 2.0/OIDC, SAML, and MitID authentication.
 """
 
-import requests
+import inspect
 import urllib.parse
 import base64
 import hashlib
@@ -18,10 +18,13 @@ import uuid
 import os
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union
 from urllib.parse import parse_qs, urlparse, urljoin
 
+import aiohttp
 from bs4 import BeautifulSoup
+
+from ..http import HttpResponse, HttpSession
 
 from ..redact import redact
 from .exceptions import (
@@ -35,17 +38,23 @@ from .exceptions import (
     OAuthError,
 )
 
-try:
-    from mitid_connect import BrowserClient
+from mitid_connect import BrowserClient
+from mitid_connect.browser_client import MITID_URL
 
-    MITID_AVAILABLE = True
-except ImportError as e:
-    MITID_AVAILABLE = False
+BROWSER_HEADERS = {
+    # The Aula app's own browser, as its traffic shows.
+    "User-Agent": "Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Mobile Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Upgrade-Insecure-Requests": "1",
+    "sec-ch-ua": '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
+    "sec-ch-ua-mobile": "?1",
+    "sec-ch-ua-platform": '"Android"',
+}
+"""Headers sent with every request of the login."""
 
 
-
-
-def _oauth_error(response: requests.Response) -> str | None:
+def _oauth_error(response: HttpResponse) -> str | None:
     """The OAuth 2.0 error code of an error response, None if it has none."""
     try:
         body = response.json()
@@ -81,11 +90,11 @@ class AulaLoginClient:
 
     def __init__(
         self,
+        session: aiohttp.ClientSession,
         mitid_username: str,
         mitid_password: Optional[str] = None,
         mitid_token: Optional[str] = None,
         auth_method: str = "APP",
-        proxy: Optional[str] = None,
         timeout: int = 30,
         debug: bool = False,
         verbose: bool = False,
@@ -94,23 +103,16 @@ class AulaLoginClient:
         Initialize the Aula login client.
 
         Args:
+            session: The aiohttp session to log in on. Its cookies are the login's, so it is
+                one for this login alone.
             mitid_username: Your MitID username
             mitid_password: Your MitID password (for TOKEN method)
             auth_method: "APP" for MitID app, "TOKEN" for code token
-            proxy: Optional SOCKS5 proxy (format: "host:port")
             timeout: Request timeout in seconds
             debug: Enable debug logging
             verbose: Enable verbose output (default: False)
-
-        Raises:
-            ConfigurationError: If MitID BrowserClient is not available
         """
-        if not MITID_AVAILABLE:
-            raise ConfigurationError(
-                "MitID BrowserClient not found. Please install: pip install mitid-browserclient"
-            )
-
-        self.session = requests.Session()
+        self.session = HttpSession(session, BROWSER_HEADERS, timeout)
         self.mitid_username = mitid_username
         self.mitid_password = mitid_password
         self.mitid_token = mitid_token
@@ -122,41 +124,27 @@ class AulaLoginClient:
         # Initialize logger for Home Assistant integration
         self.logger = logging.getLogger(__name__)
 
-        # Configure proxy if provided
-        if proxy:
-            self.session.proxies.update(
-                {"http": f"socks5://{proxy}", "https": f"socks5://{proxy}"}
-            )
-
-        # Mobile app user agent from MITM flows
-        self.session.headers.update(
-            {
-                "User-Agent": "Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Mobile Safari/537.36",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Upgrade-Insecure-Requests": "1",
-                "sec-ch-ua": '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
-                "sec-ch-ua-mobile": "?1",
-                "sec-ch-ua-platform": '"Android"',
-            }
-        )
-
         # URLs from MITM analysis
         self.auth_base_url = "https://login.aula.dk"
         self.broker_url = "https://broker.unilogin.dk"
+        self.nemlogin_url = "https://nemlog-in.mitid.dk"
+        self.mitid_url = MITID_URL
         self.app_redirect_uri = "https://app-private.aula.dk"
         self.app_api_base = "https://app-private.aula.dk/api/v22"
+        self.api_test_base = "https://www.aula.dk/api/v22/"
 
         # OAuth configuration from source code
         self.client_id_level_3 = "_99949a54b8b65423862aac1bf629599ed64231607a"
         self.scope = "aula-sensitive"
 
+        self.identity_selector: Optional[Callable[[List[str]], Union[str, int, Awaitable[Union[str, int]]]]] = None
+        self.available_identities: List[str] = []
+
         # Session state
         self.code_verifier = None
         self.code_challenge = None
         self.state = None
-        self.tokens = None
+        self.tokens: Optional[Dict[str, Any]] = None
         self.mitid_client = None  # Store MitID client for QR code access
 
     def log(self, message: str, level: str = "INFO"):
@@ -200,7 +188,7 @@ class AulaLoginClient:
             .rstrip("=")
         )
 
-    def step1_start_oauth_flow(self) -> str:
+    async def step1_start_oauth_flow(self) -> str:
         """Step 1: Start OAuth authorization flow"""
         self.log("Starting OAuth 2.0 authorization flow")
 
@@ -228,8 +216,8 @@ class AulaLoginClient:
             )
 
             # Actually visit the OAuth authorization URL - this should redirect to SAML
-            oauth_response = self.session.get(
-                full_auth_url, allow_redirects=False, timeout=self.timeout
+            oauth_response = await self.session.get(
+                full_auth_url, allow_redirects=False
             )
             self.log(f"OAuth authorization response: {oauth_response.status_code}", "DEBUG")
 
@@ -266,10 +254,10 @@ class AulaLoginClient:
                     f"Unexpected OAuth authorization response: {oauth_response.status_code}"
                 )
 
-        except requests.RequestException as e:
+        except (aiohttp.ClientError, TimeoutError) as e:
             raise NetworkError(f"Network error during OAuth flow: {str(e)}")
 
-    def step3_follow_redirect_chain(self, start_url: str) -> Dict:
+    async def step3_follow_redirect_chain(self, start_url: str) -> Dict[str, Any]:
         """Step 3: Follow the redirect chain to MitID"""
         self.log("Following redirect chain to MitID")
 
@@ -279,8 +267,8 @@ class AulaLoginClient:
 
         try:
             while redirect_count < max_redirects:
-                response = self.session.get(
-                    current_url, allow_redirects=False, timeout=self.timeout
+                response = await self.session.get(
+                    current_url, allow_redirects=False
                 )
                 self.log(
                     f"Redirect {redirect_count + 1}: {response.status_code} -> {current_url[:80]}..."
@@ -291,11 +279,11 @@ class AulaLoginClient:
                     soup = BeautifulSoup(response.text, "html.parser")
 
                     # Check what kind of page this is
-                    if "broker.unilogin.dk" in response.url:
+                    if "broker.unilogin.dk" in response.url or response.url.startswith(self.broker_url):
                         self.log("Reached UniLogin broker - looking for IdP selection")
-                        return self._handle_broker_page(soup, response)
+                        return await self._handle_broker_page(soup, response)
 
-                    elif "mitid.dk" in response.url or "nemlog-in" in response.url:
+                    elif "mitid.dk" in response.url or "nemlog-in" in response.url or response.url.startswith(self.nemlogin_url):
                         self.log("Reached MitID page")
 
                         # Extract verification token
@@ -313,7 +301,7 @@ class AulaLoginClient:
                         return {
                             "verification_token": verification_token,
                             "mitid_url": response.url,
-                            "session_cookies": dict(self.session.cookies),
+                            "session_cookies": self.session.cookies.get_dict(),
                         }
 
                     else:
@@ -331,10 +319,10 @@ class AulaLoginClient:
 
             raise SAMLError(f"Too many redirects ({max_redirects})")
 
-        except requests.RequestException as e:
+        except (aiohttp.ClientError, TimeoutError) as e:
             raise NetworkError(f"Network error during redirect chain: {str(e)}")
 
-    def _handle_broker_page(self, soup, response) -> Dict:
+    async def _handle_broker_page(self, soup, response) -> Dict[str, Any]:
         """Handle the broker page for IdP selection"""
         # Look for MitID/NemLogin selection form or button
         forms = soup.find_all("form")
@@ -369,11 +357,10 @@ class AulaLoginClient:
 
                         self.log(f"Trying form submission with {selector}={value}")
 
-                        post_response = self.session.post(
+                        post_response = await self.session.post(
                             action,
                             data=test_data,
                             allow_redirects=False,
-                            timeout=self.timeout,
                         )
                         self.log(f"Form submission result: {post_response.status_code}", "DEBUG")
 
@@ -384,35 +371,34 @@ class AulaLoginClient:
                                     f"Form submission redirected to: {current_url[:100]}..."
                                 )
                                 # Continue following redirects from this new URL
-                                return self.step3_follow_redirect_chain(current_url)
+                                return await self.step3_follow_redirect_chain(current_url)
 
                 raise SAMLError("Could not find working IdP selection method")
 
         raise SAMLError("No usable form found on broker page")
 
-    def step4_mitid_authentication(self, verification_token: str) -> str:
+    async def step4_mitid_authentication(self, verification_token: str) -> str:
         """Step 4: Perform MitID authentication"""
         self.log(f"Starting MitID authentication (method: {self.auth_method})")
 
         try:
             # Initialize MitID authentication
-            post_url = "https://nemlog-in.mitid.dk/login/mitid/initialize"
+            post_url = f"{self.nemlogin_url}/login/mitid/initialize"
             post_headers = {
                 "accept": "*/*",
-                "accept-encoding": "gzip, deflate, br, zstd",
                 "accept-language": "en-US,en;q=0.9,da;q=0.8",
                 "cache-control": "no-cache",
                 "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "origin": "https://nemlog-in.mitid.dk",
+                "origin": self.nemlogin_url,
                 "pragma": "no-cache",
-                "referer": "https://nemlog-in.mitid.dk/login/mitid",
+                "referer": f"{self.nemlogin_url}/login/mitid",
                 "x-requested-with": "XMLHttpRequest",
             }
 
             post_data = {"__RequestVerificationToken": verification_token}
 
-            resp_init = self.session.post(
-                post_url, headers=post_headers, data=post_data, timeout=self.timeout
+            resp_init = await self.session.post(
+                post_url, headers=post_headers, data=post_data
             )
             resp_init_json = resp_init.json()
 
@@ -426,7 +412,7 @@ class AulaLoginClient:
             aux = json.loads(base64.b64decode(aux_value).decode())
 
             # Use MitID BrowserClient for authentication
-            authorization_code = self._get_mitid_authentication_code(aux)
+            authorization_code = await self._get_mitid_authentication_code(aux)
             self.log(f"MitID authentication code obtained")
 
             # Clear MitID client to prevent QR codes from showing up again in UI
@@ -434,12 +420,12 @@ class AulaLoginClient:
 
             return authorization_code
 
-        except requests.RequestException as e:
+        except (aiohttp.ClientError, TimeoutError) as e:
             raise NetworkError(f"Network error during MitID authentication: {str(e)}")
         except (json.JSONDecodeError, KeyError) as e:
             raise MitIDError(f"Invalid MitID response format: {str(e)}")
 
-    def _get_mitid_authentication_code(self, aux: Dict) -> str:
+    async def _get_mitid_authentication_code(self, aux: Dict) -> str:
         """Use MitID BrowserClient to get authentication code"""
         try:
             client_hash = binascii.hexlify(
@@ -448,10 +434,16 @@ class AulaLoginClient:
             authentication_session_id = aux["parameters"]["authenticationSessionId"]
 
             self.mitid_client = BrowserClient(
-                client_hash, authentication_session_id, self.session
+                self.session.session,
+                client_hash,
+                authentication_session_id,
+                headers=self.session.headers,
+                timeout=self.timeout,
+                base_url=self.mitid_url,
             )
+            await self.mitid_client.start()
             available_authenticators = (
-                self.mitid_client.identify_as_user_and_get_available_authenticators(
+                await self.mitid_client.identify_as_user_and_get_available_authenticators(
                     self.mitid_username
                 )
             )
@@ -471,26 +463,26 @@ class AulaLoginClient:
                         "MitID token digits are required for TOKEN authentication method"
                     )
                 self.log("Starting token authentication with provided credentials")
-                self.mitid_client.authenticate_with_token(self.mitid_token)
-                self.mitid_client.authenticate_with_password(self.mitid_password)
+                await self.mitid_client.authenticate_with_token(self.mitid_token)
+                await self.mitid_client.authenticate_with_password(self.mitid_password)
             elif self.auth_method == "APP" and "APP" in available_authenticators:
-                self.mitid_client.authenticate_with_app()
+                await self.mitid_client.authenticate_with_app()
             else:
                 raise MitIDError(
                     f"Authentication method {self.auth_method} not available"
                 )
 
             authorization_code = (
-                self.mitid_client.finalize_authentication_and_get_authorization_code()
+                await self.mitid_client.finalize_authentication_and_get_authorization_code()
             )
             return authorization_code
 
         except Exception as e:
             raise MitIDError(f"MitID authentication failed: {str(e)}")
 
-    def step5_complete_mitid_flow(
+    async def step5_complete_mitid_flow(
         self, verification_token: str, authorization_code: str
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         """Step 5: Complete MitID authentication and get SAML response"""
         self.log("Completing MitID authentication flow")
 
@@ -512,12 +504,11 @@ class AulaLoginClient:
             }
 
             self.log(
-                f"Submitting MitID completion data to: https://nemlog-in.mitid.dk/login/mitid"
+                f"Submitting MitID completion data to: {self.nemlogin_url}/login/mitid"
             )
-            request = self.session.post(
-                "https://nemlog-in.mitid.dk/login/mitid",
+            request = await self.session.post(
+                f"{self.nemlogin_url}/login/mitid",
                 data=params,
-                timeout=self.timeout,
             )
 
             self.log(f"MitID completion response: {request.status_code}", "DEBUG")
@@ -526,9 +517,9 @@ class AulaLoginClient:
             soup = BeautifulSoup(request.text, features="html.parser")
 
             # Handle multiple identity options if present
-            if request.url == "https://nemlog-in.mitid.dk/loginoption":
+            if request.url == f"{self.nemlogin_url}/loginoption":
                 self.log("Multiple identity options detected, choosing...")
-                request, soup = self._choose_between_multiple_identities(request, soup)
+                request, soup = await self._choose_between_multiple_identities(request, soup)
                 self.log(
                     f"After identity choice: {request.status_code} -> {request.url}"
                 )
@@ -558,10 +549,10 @@ class AulaLoginClient:
                 "completion_url": request.url,
             }
 
-        except requests.RequestException as e:
+        except (aiohttp.ClientError, TimeoutError) as e:
             raise NetworkError(f"Network error during MitID completion: {str(e)}")
 
-    def _choose_between_multiple_identities(self, request, soup):
+    async def _choose_between_multiple_identities(self, request, soup):
         """Handle multiple identity selection"""
         data = {}
         for soup_input in soup.form.select("input"):
@@ -596,8 +587,10 @@ class AulaLoginClient:
         self.available_identities = identity_names
 
         # If identity_selector callback is provided, use it; otherwise use input()
-        if hasattr(self, "identity_selector") and self.identity_selector:
+        if self.identity_selector is not None:
             identity = self.identity_selector(identity_names)
+            if inspect.isawaitable(identity):
+                identity = await identity
         else:
             self.log("You can choose between different identities:", "INFO")
             for i, name in enumerate(identity_names):
@@ -616,17 +609,16 @@ class AulaLoginClient:
             "Content-Type": "application/x-www-form-urlencoded",
             "Referer": request.url,
         }
-        request = self.session.post(
+        request = await self.session.post(
             request.url,
             data=data,
             headers=headers,
-            timeout=self.timeout,
             allow_redirects=True,
         )
         soup = BeautifulSoup(request.text, features="html.parser")
         return request, soup
 
-    def step6_saml_broker_flow(self, saml_data: Dict) -> Dict:
+    async def step6_saml_broker_flow(self, saml_data: Dict) -> Dict[str, Any]:
         """Step 6: Complete SAML broker authentication"""
         self.log("Processing SAML broker flow")
 
@@ -634,12 +626,11 @@ class AulaLoginClient:
             # Post SAML response to broker
             saml_post_headers = {
                 "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
-                "accept-encoding": "gzip, deflate, br, zstd",
                 "accept-language": "en-US,en;q=0.9,da;q=0.8",
                 "cache-control": "max-age=0",
                 "content-type": "application/x-www-form-urlencoded",
-                "origin": "https://nemlog-in.mitid.dk",
-                "referer": "https://nemlog-in.mitid.dk/login/mitid",
+                "origin": self.nemlogin_url,
+                "referer": f"{self.nemlogin_url}/login/mitid",
                 "sec-fetch-dest": "document",
                 "sec-fetch-mode": "navigate",
                 "sec-fetch-site": "cross-site",
@@ -660,12 +651,11 @@ class AulaLoginClient:
                 saml_post_headers["cookie"] = cookie_header
 
             # Post to broker endpoint
-            broker_response = self.session.post(
-                "https://broker.unilogin.dk/auth/realms/broker/broker/nemlogin3/endpoint",
+            broker_response = await self.session.post(
+                f"{self.broker_url}/auth/realms/broker/broker/nemlogin3/endpoint",
                 data=params,
                 headers=saml_post_headers,
                 allow_redirects=False,
-                timeout=self.timeout,
             )
 
             if "Location" not in broker_response.headers:
@@ -673,14 +663,14 @@ class AulaLoginClient:
 
             # Follow redirect chain through broker
             action_url = broker_response.headers["Location"]
-            final_request = self.session.get(action_url, timeout=self.timeout)
+            final_request = await self.session.get(action_url)
 
-            return self._process_broker_response(final_request)
+            return await self._process_broker_response(final_request)
 
-        except requests.RequestException as e:
+        except (aiohttp.ClientError, TimeoutError) as e:
             raise NetworkError(f"Network error during SAML broker flow: {str(e)}")
 
-    def _process_broker_response(self, response) -> Dict:
+    async def _process_broker_response(self, response) -> Dict[str, Any]:
         """Process broker response and extract session parameters"""
         soup = BeautifulSoup(response.text, "html.parser")
 
@@ -760,12 +750,12 @@ class AulaLoginClient:
             if form_action and form_action.startswith("http"):
                 post_broker_url = form_action
             elif form_action:
-                post_broker_url = f"https://broker.unilogin.dk{form_action}"
+                post_broker_url = f"{self.broker_url}{form_action}"
             else:
-                post_broker_url = f"https://broker.unilogin.dk/auth/realms/broker/login-actions/post-broker-login?session_code={session_code}&execution={execution}&client_id={client_id}&tab_id={tab_id}"
+                post_broker_url = f"{self.broker_url}/auth/realms/broker/login-actions/post-broker-login?session_code={session_code}&execution={execution}&client_id={client_id}&tab_id={tab_id}"
         else:
             self.log("No form found in broker response")
-            post_broker_url = f"https://broker.unilogin.dk/auth/realms/broker/login-actions/post-broker-login?session_code={session_code}&execution={execution}&client_id={client_id}&tab_id={tab_id}"
+            post_broker_url = f"{self.broker_url}/auth/realms/broker/login-actions/post-broker-login?session_code={session_code}&execution={execution}&client_id={client_id}&tab_id={tab_id}"
 
         if not session_code or not execution:
             self.log(f"Warning: Missing broker params. Response URL: {response.url}")
@@ -788,12 +778,11 @@ class AulaLoginClient:
         if cookie_header:
             post_broker_headers["cookie"] = cookie_header
 
-        post_broker_response = self.session.post(
+        post_broker_response = await self.session.post(
             post_broker_url,
             headers=post_broker_headers,
             data=form_data,
             allow_redirects=False,
-            timeout=self.timeout,
         )
 
         self.log(f"Post-broker response status: {post_broker_response.status_code}", "DEBUG")
@@ -831,12 +820,11 @@ class AulaLoginClient:
                         if cookie_header:
                             post_broker_headers["cookie"] = cookie_header
 
-                        post_broker_response = self.session.post(
+                        post_broker_response = await self.session.post(
                             action,
                             headers=post_broker_headers,
                             data=conf_data,
                             allow_redirects=False,
-                            timeout=self.timeout,
                         )
 
                         self.log(
@@ -854,7 +842,7 @@ class AulaLoginClient:
 
         # Follow final redirect
         after_post_broker_url = post_broker_response.headers["Location"]
-        after_response = self.session.get(after_post_broker_url, timeout=self.timeout)
+        after_response = await self.session.get(after_post_broker_url)
 
         # Extract final SAML response for Aula
         after_soup = BeautifulSoup(after_response.text, "html.parser")
@@ -887,7 +875,7 @@ class AulaLoginClient:
             "form_action": saml_form.get("action", ""),
         }
 
-    def step7_complete_aula_login(self, saml_data: Dict) -> str:
+    async def step7_complete_aula_login(self, saml_data: Dict) -> str:
         """Step 7: Complete Aula login with SAML response"""
         self.log("Completing Aula login with SAML response")
 
@@ -921,17 +909,16 @@ class AulaLoginClient:
             # Use the form action from the broker response instead of hardcoding
             saml_endpoint = saml_data.get(
                 "form_action",
-                "https://login.aula.dk/simplesaml/module.php/saml/sp/saml2-acs.php/uni-sp",
+                f"{self.auth_base_url}/simplesaml/module.php/saml/sp/saml2-acs.php/uni-sp",
             )
             self.log(f"Submitting SAML response to: {saml_endpoint}")
 
             # Post to Aula SAML endpoint
-            aula_response = self.session.post(
+            aula_response = await self.session.post(
                 saml_endpoint,
                 headers=aula_saml_headers,
                 data=aula_saml_data,
                 allow_redirects=False,
-                timeout=self.timeout,
             )
 
             self.log(f"SAML response status: {aula_response.status_code}", "DEBUG")
@@ -940,14 +927,14 @@ class AulaLoginClient:
                 raise OAuthError("No redirect from Aula SAML endpoint")
 
             # Follow the redirect chain manually to capture all steps
-            return self._follow_oauth_callback_redirects(
+            return await self._follow_oauth_callback_redirects(
                 aula_response.headers["Location"]
             )
 
-        except requests.RequestException as e:
+        except (aiohttp.ClientError, TimeoutError) as e:
             raise NetworkError(f"Network error during Aula login completion: {str(e)}")
 
-    def _follow_oauth_callback_redirects(self, start_url: str) -> str:
+    async def _follow_oauth_callback_redirects(self, start_url: str) -> str:
         """Follow redirects to find the OAuth callback URL"""
         redirect_url = start_url
         redirect_count = 0
@@ -957,8 +944,8 @@ class AulaLoginClient:
             redirect_count += 1
             self.log(f"Following redirect #{redirect_count}: {redirect_url[:100]}...")
 
-            redirect_response = self.session.get(
-                redirect_url, allow_redirects=False, timeout=self.timeout
+            redirect_response = await self.session.get(
+                redirect_url, allow_redirects=False
             )
             self.log(f"Redirect response status: {redirect_response.status_code}", "DEBUG")
 
@@ -1012,7 +999,7 @@ class AulaLoginClient:
             f"Too many redirects ({max_redirects}) without finding OAuth callback"
         )
 
-    def step8_exchange_oauth_code(self, callback_url: str) -> Dict:
+    async def step8_exchange_oauth_code(self, callback_url: str) -> Dict[str, Any]:
         """Step 8: Exchange OAuth authorization code for tokens"""
         self.log("Exchanging OAuth authorization code for tokens")
 
@@ -1048,8 +1035,8 @@ class AulaLoginClient:
                 "Accept": "application/json",
             }
 
-            response = self.session.post(
-                token_url, data=token_data, headers=headers, timeout=self.timeout
+            response = await self.session.post(
+                token_url, data=token_data, headers=headers
             )
 
             if response.status_code != 200:
@@ -1072,12 +1059,12 @@ class AulaLoginClient:
 
             return tokens
 
-        except requests.RequestException as e:
+        except (aiohttp.ClientError, TimeoutError) as e:
             raise NetworkError(f"Network error during token exchange: {str(e)}")
         except json.JSONDecodeError as e:
             raise OAuthError(f"Invalid token response format: {str(e)}")
 
-    def step9_test_api_access(self) -> Dict:
+    async def step9_test_api_access(self) -> Dict[str, Any]:
         """Step 9: Test API access with obtained tokens"""
         self.log("Testing Aula API access")
 
@@ -1086,7 +1073,7 @@ class AulaLoginClient:
 
         try:
             # Based on HAR file analysis - actual v22 API endpoints with correct parameters
-            v22_api_base = "https://www.aula.dk/api/v22/"
+            v22_api_base = self.api_test_base
 
             # Generate a device ID similar to what the app uses
             device_id = f"Droid-private-{str(uuid.uuid4())}"
@@ -1134,15 +1121,14 @@ class AulaLoginClient:
                     self.log(f"Testing v22 API method: {method_name}")
 
                     if http_method == "GET":
-                        response = self.session.get(
-                            url, headers=api_headers, timeout=self.timeout
+                        response = await self.session.get(
+                            url, headers=api_headers
                         )
                     elif http_method == "POST":
-                        response = self.session.post(
+                        response = await self.session.post(
                             url,
                             headers=api_headers,
                             json=params.get("data", {}),
-                            timeout=self.timeout,
                         )
                     else:
                         continue
@@ -1196,10 +1182,10 @@ class AulaLoginClient:
                     "message": "Authentication successful but API access limited",
                 }
 
-        except requests.RequestException as e:
+        except (aiohttp.ClientError, TimeoutError) as e:
             raise NetworkError(f"Network error during API testing: {str(e)}")
 
-    def check_token_expiration(self) -> Dict:
+    def check_token_expiration(self) -> Dict[str, Any]:
         """Check if the access token is about to expire"""
         if not self.tokens or "access_token" not in self.tokens:
             return {"valid": False, "reason": "No access token available"}
@@ -1240,7 +1226,7 @@ class AulaLoginClient:
         # If we can't decode the token, assume it's invalid
         return {"valid": False, "reason": "Unable to decode token"}
 
-    def renew_access_token(self) -> bool:
+    async def renew_access_token(self) -> bool:
         """Renew the access token using the refresh token.
 
         Returns:
@@ -1271,8 +1257,8 @@ class AulaLoginClient:
                 "User-Agent": self.session.headers["User-Agent"],
             }
 
-            response = self.session.post(
-                token_url, data=token_data, headers=token_headers, timeout=self.timeout
+            response = await self.session.post(
+                token_url, data=token_data, headers=token_headers
             )
 
             if response.status_code == 200:
@@ -1325,50 +1311,14 @@ class AulaLoginClient:
 
         except (TokenExpiredError, NetworkError):
             raise
-        except (requests.ConnectionError, requests.Timeout, OSError) as e:
+        except (aiohttp.ClientError, TimeoutError, OSError) as e:
             self.log(f" Network error during token renewal: {str(e)}", "ERROR")
             raise NetworkError(f"Network error during token refresh: {e}") from e
         except Exception as e:
             self.log(f" Token renewal exception: {str(e)}", "ERROR")
             return False
 
-    def test_token_validity(self) -> bool:
-        """Test if the current token is valid by making a simple API call"""
-        if not self.tokens or "access_token" not in self.tokens:
-            self.log("No access token available for validation")
-            return False
-
-        try:
-            test_url = (
-                "https://www.aula.dk/api/v22/"
-                "?method=profiles.getProfileContext&portalrole=guardian"
-                f"&access_token={self.tokens['access_token']}"
-            )
-
-            headers = {
-                "Accept": "application/json",
-                "User-Agent": self.session.headers["User-Agent"],
-            }
-
-            response = self.session.get(test_url, headers=headers, timeout=10)
-
-            if response.status_code == 200:
-                self.log("Token validation successful")
-                return True
-            elif response.status_code in [401, 403, 500]:
-                self.log(
-                    f"Token validation failed: {response.status_code} - Token invalid/expired"
-                )
-                return False
-            else:
-                self.log(f"Token validation uncertain: {response.status_code}")
-                return True  # Assume valid for non-auth errors
-
-        except Exception as e:
-            self.log(f"Token validation exception: {str(e)}")
-            return False
-
-    def authenticate(self) -> Dict:
+    async def authenticate(self) -> Dict[str, Any]:
         """
         Execute the complete authentication flow.
 
@@ -1384,32 +1334,32 @@ class AulaLoginClient:
 
         try:
             # Step 1: Start OAuth flow (this will redirect to SAML)
-            saml_redirect_url = self.step1_start_oauth_flow()
+            saml_redirect_url = await self.step1_start_oauth_flow()
 
             # Step 2: Follow the OAuth→SAML redirect chain to MitID
-            mitid_data = self.step3_follow_redirect_chain(saml_redirect_url)
+            mitid_data = await self.step3_follow_redirect_chain(saml_redirect_url)
 
             # Step 3: MitID authentication
-            auth_code = self.step4_mitid_authentication(
+            auth_code = await self.step4_mitid_authentication(
                 mitid_data["verification_token"]
             )
 
             # Step 4: Complete MitID flow
-            saml_response_data = self.step5_complete_mitid_flow(
+            saml_response_data = await self.step5_complete_mitid_flow(
                 mitid_data["verification_token"], auth_code
             )
 
             # Step 5: SAML broker flow
-            broker_data = self.step6_saml_broker_flow(saml_response_data)
+            broker_data = await self.step6_saml_broker_flow(saml_response_data)
 
             # Step 6: Complete Aula login (this should now redirect back to OAuth)
-            callback_url = self.step7_complete_aula_login(broker_data)
+            callback_url = await self.step7_complete_aula_login(broker_data)
 
             # Step 7: Exchange OAuth code
-            tokens = self.step8_exchange_oauth_code(callback_url)
+            tokens = await self.step8_exchange_oauth_code(callback_url)
 
             # Step 8: Test API access
-            profile_data = self.step9_test_api_access()
+            profile_data = await self.step9_test_api_access()
 
             self.log("=" * 60)
             self.log("AUTHENTICATION FLOW COMPLETED SUCCESSFULLY!")
@@ -1464,209 +1414,6 @@ class AulaLoginClient:
         svg_parts.append("</svg>")
         return "".join(svg_parts)
 
-    def login_and_save_token(self, token_file_path: str = "tokens.json") -> Dict:
-        """
-        Perform login and save token information to a JSON file.
-
-        Args:
-            token_file_path: Path where to save the token JSON file (default: "tokens.json")
-
-        Returns:
-            Dict containing authentication result and token information
-
-        Raises:
-            AulaAuthenticationError: If login fails
-            IOError: If unable to save token file
-        """
-        self.log(f"Starting login flow with token save to: {token_file_path}")
-
-        try:
-            # Perform authentication
-            auth_result = self.authenticate()
-
-            if not auth_result.get("success"):
-                raise AulaAuthenticationError("Authentication flow did not succeed")
-
-            # Prepare token data with metadata
-            token_data = {
-                "timestamp": time.time(),
-                "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "username": self.mitid_username,
-                "auth_method": self.auth_method,
-                "tokens": auth_result["tokens"],
-                "client_info": {
-                    "client_id": self.client_id_level_3,
-                    "scope": self.scope,
-                },
-            }
-
-            # Add expiration information if available
-            if "expires_in" in auth_result["tokens"]:
-                expires_at = time.time() + auth_result["tokens"]["expires_in"]
-                token_data["expires_at"] = expires_at
-                token_data["expires_at_readable"] = time.strftime(
-                    "%Y-%m-%d %H:%M:%S", time.localtime(expires_at)
-                )
-
-            # Save to file
-            token_path = Path(token_file_path)
-            token_path.parent.mkdir(parents=True, exist_ok=True)
-
-            with open(token_path, "w") as f:
-                json.dump(token_data, f, indent=2)
-
-            self.log(f" Token data saved successfully to: {token_file_path}")
-
-            return {
-                "success": True,
-                "token_file": str(token_path),
-                "tokens": auth_result["tokens"],
-                "expires_at": token_data.get("expires_at"),
-                "profile_data": auth_result.get("profile_data"),
-            }
-
-        except Exception as e:
-            self.log(f"Login and save failed: {str(e)}", "ERROR")
-            raise
-
-    def get_valid_token(self, token_file_path: str = "tokens.json") -> Optional[Dict]:
-        """
-        Check for existing token, validate it, and return it if valid.
-        If token is expired but refresh token is available, attempt to renew.
-        If renewal fails or no valid token exists, return None.
-
-        Args:
-            token_file_path: Path to the token JSON file (default: "tokens.json")
-
-        Returns:
-            Dict containing valid token information, or None if no valid token available
-        """
-        self.log(f"Checking for valid token in: {token_file_path}")
-
-        token_path = Path(token_file_path)
-
-        # Check if token file exists
-        if not token_path.exists():
-            self.log(f"Token file does not exist: {token_file_path}")
-            return None
-
-        try:
-            # Load token data
-            with open(token_path, "r") as f:
-                token_data = json.load(f)
-
-            # Validate token data structure
-            if not isinstance(token_data, dict) or "tokens" not in token_data:
-                self.log("Invalid token file format", "WARN")
-                return None
-
-            tokens = token_data["tokens"]
-            if not tokens.get("access_token"):
-                self.log("No access token found in file", "WARN")
-                return None
-
-            # Set the tokens in the client
-            self.tokens = tokens
-
-            # Check if token is expired using file metadata
-            if "expires_at" in token_data:
-                current_time = time.time()
-                if current_time >= token_data["expires_at"]:
-                    self.log("Token expired according to file metadata")
-                    return self._attempt_token_renewal(token_data, token_path)
-
-            # Check token validity by examining JWT payload
-            token_check = self.check_token_expiration()
-
-            if token_check.get("valid"):
-                expires_in = token_check.get("expires_in", 0)
-                self.log(f" Token is valid! Expires in {int(expires_in)} seconds")
-
-                # Test actual token validity with API call
-                if self.test_token_validity():
-                    return {
-                        "success": True,
-                        "tokens": tokens,
-                        "source": "cached",
-                        "expires_in": expires_in,
-                        "expires_at": token_check.get("expires_at"),
-                        "cached_data": token_data,
-                    }
-                else:
-                    self.log("Token failed API validation test")
-                    return self._attempt_token_renewal(token_data, token_path)
-            else:
-                self.log(
-                    f"Token not valid: {token_check.get('reason', 'Unknown reason')}"
-                )
-                return self._attempt_token_renewal(token_data, token_path)
-
-        except (json.JSONDecodeError, IOError) as e:
-            self.log(f"Error reading token file: {str(e)}", "ERROR")
-            return None
-        except Exception as e:
-            self.log(f"Unexpected error during token validation: {str(e)}", "ERROR")
-            return None
-
-    def _attempt_token_renewal(
-        self, token_data: Dict, token_path: Path
-    ) -> Optional[Dict]:
-        """
-        Attempt to renew the token using refresh token.
-
-        Args:
-            token_data: Original token data from file
-            token_path: Path to token file
-
-        Returns:
-            Dict with renewed token info, or None if renewal fails
-        """
-        self.log("Attempting token renewal...")
-
-        if not token_data["tokens"].get("refresh_token"):
-            self.log("No refresh token available for renewal")
-            return None
-
-        try:
-            # Attempt renewal
-            if self.renew_access_token():
-                self.log("Token renewed successfully")
-
-                # Update token data with new tokens
-                token_data["tokens"] = self.tokens
-                token_data["renewed_at"] = time.time()
-                token_data["renewed_at_readable"] = time.strftime("%Y-%m-%d %H:%M:%S")
-
-                # Update expiration info
-                if "expires_in" in self.tokens:
-                    expires_at = time.time() + self.tokens["expires_in"]
-                    token_data["expires_at"] = expires_at
-                    token_data["expires_at_readable"] = time.strftime(
-                        "%Y-%m-%d %H:%M:%S", time.localtime(expires_at)
-                    )
-
-                # Save updated tokens
-                with open(token_path, "w") as f:
-                    json.dump(token_data, f, indent=2)
-
-                self.log(f"Updated token file saved: {token_path}")
-
-                return {
-                    "success": True,
-                    "tokens": self.tokens,
-                    "source": "renewed",
-                    "expires_in": self.tokens.get("expires_in"),
-                    "expires_at": token_data.get("expires_at"),
-                    "cached_data": token_data,
-                }
-            else:
-                self.log("Token renewal failed")
-                return None
-
-        except Exception as e:
-            self.log(f"Token renewal failed with exception: {str(e)}", "ERROR")
-            return None
-
     @property
     def access_token(self) -> Optional[str]:
         """Get the current access token"""
@@ -1686,62 +1433,3 @@ class AulaLoginClient:
         if self.mitid_client and hasattr(self.mitid_client, "get_current_qr_codes"):
             return self.mitid_client.get_current_qr_codes()
         return None
-
-    def get_valid_access_token(self, token_file_path: str = "tokens.json") -> Dict:
-        """
-        Simple function to get a valid access token.
-
-        This function will:
-        1. Check if the current token is still valid
-        2. If expired, try to refresh it using the token from the JSON file
-        3. Test the token by making an actual API call
-        4. If token test fails, return a "token not valid" error
-
-        Args:
-            token_file_path: Path to the token JSON file (default: "tokens.json")
-
-        Returns:
-            Dict with structure:
-            - success: bool - Whether a valid token was obtained
-            - access_token: str - The valid access token (if success=True)
-            - error: str - Error message (if success=False)
-            - expires_in: int - Seconds until token expires (if success=True)
-        """
-        self.log("Checking for valid access token...")
-
-        try:
-            # First, try to get a valid token from cache/file
-            token_result = self.get_valid_token(token_file_path)
-            if token_result and token_result.get("success"):
-                # Double-check by actually testing the token with an API call
-                self.log("Testing token validity with API call...")
-                if self.test_token_validity():
-                    self.log("Token validation successful")
-                    return {
-                        "success": True,
-                        "access_token": token_result["tokens"]["access_token"],
-                        "expires_in": token_result.get("expires_in", 0),
-                        "source": token_result.get("source", "unknown"),
-                    }
-                else:
-                    self.log("Token failed API validation test")
-                    return {
-                        "success": False,
-                        "error": "Token exists but failed API validation test",
-                        "details": "Token was found and appears valid but failed when tested against the API",
-                    }
-            else:
-                self.log("Unable to obtain valid token")
-                return {
-                    "success": False,
-                    "error": "Token not valid and could not be refreshed",
-                    "details": "Either no token file exists, token is expired and refresh failed, or no refresh token available",
-                }
-
-        except Exception as e:
-            self.log(f"Exception while getting valid token: {str(e)}", "ERROR")
-            return {
-                "success": False,
-                "error": f"Exception occurred: {str(e)}",
-                "details": "An unexpected error occurred while trying to get a valid token",
-            }

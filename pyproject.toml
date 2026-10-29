@@ -28,8 +28,8 @@ classifiers = [
 requires-python = ">=3.12"
 dependencies = [
     "beautifulsoup4>=4.12.0",
-    "mitid_connect>=0.0.1",
-    "requests>=2.31.0",
+    "aiohttp>=3.9.0",
+    "mitid_connect>=0.0.2",
 ]
 
 [project.urls]
@@ -59,9 +59,7 @@ typeCheckingMode = "strict"
 reportMissingTypeStubs = "none"
 # Not yet checked, during the transition below; each pull request takes files off this list.
 ignore = [
-    "src/aula_connect/client.py",
     "src/aula_connect/login/client.py",
-    "tests/api/test_error_handling.py",
 ]
 
 [[tool.pyright.executionEnvironments]]
@@ -73,4 +71,5 @@ reportPrivateUsage = "none"
 transition = """The library starts from the Aula integration's MitID login and API client, which \
 were written before the shared standard: they are typed and tested module by module."""
 # The coverage the tests reach now; each pull request raises it, until it is 100.
-coverage = 54
+coverage = 83
+libraries = ["mitid_connect"]

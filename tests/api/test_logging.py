@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from datetime import datetime, timezone
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from requests import Response
+from aula_connect.http import HttpResponse
 
 from aula_connect.api.aula_errors import AulaApiError
 from aula_connect.api.aula_proxy_client import AulaProxyClient
@@ -42,7 +43,7 @@ PARENT = AulaProfile([CHILD], "Pat", [SCHOOL], "Pat Example", 201, "pat")
 
 def _failed(status: int = 500) -> Mock:
     """A failed answer whose body, request headers and URL hold secrets and a child's name."""
-    response = Mock(spec=Response)
+    response = Mock(spec=HttpResponse)
     response.status_code = status
     response.ok = False
     response.reason = "Internal Server Error"
@@ -66,7 +67,7 @@ def _thread() -> Any:
 
 start = datetime(2026, 12, 28, tzinfo=timezone.utc)
 end = datetime(2027, 1, 11, tzinfo=timezone.utc)
-READS: dict[str, Callable[[AulaProxyClient], object]] = {
+READS: dict[str, Callable[[AulaProxyClient], Coroutine[Any, Any, object]]] = {
     "birthday events": lambda client: client.get_birthday_events([CHILD], start, end),
     "calendar events": lambda client: client.get_calendar_events([SCHOOL], start, end),
     "daily overviews": lambda client: client.get_daily_overviews([PARENT]),
@@ -78,39 +79,39 @@ READS: dict[str, Callable[[AulaProxyClient], object]] = {
 
 @pytest.mark.parametrize("read", READS.values(), ids=READS.keys())
 def test_a_read_aula_refuses_logs_no_secret_and_no_childs_data(
-    caplog: pytest.LogCaptureFixture, read: Callable[[AulaProxyClient], object]
+    caplog: pytest.LogCaptureFixture, read: Callable[[AulaProxyClient], Coroutine[Any, Any, object]]
 ) -> None:
-    client = AulaProxyClient("s3cr3t-t0ken")
+    client = AulaProxyClient(MagicMock(), "s3cr3t-t0ken")
     caplog.set_level(logging.DEBUG)
     with (
-        patch.object(client._session, "get", return_value=_failed()),
-        patch.object(client._session, "post", return_value=_failed()),
+        patch.object(client._session, "get", new_callable=AsyncMock, return_value=_failed()),
+        patch.object(client._session, "post", new_callable=AsyncMock, return_value=_failed()),
         pytest.raises(AulaApiError),
     ):
-        read(client)
+        asyncio.run(read(client))
     assert "HTTP 500" in caplog.text
     for secret in SECRETS:
         assert secret not in caplog.text
 
 
 def test_a_widget_token_aula_refuses_logs_no_body(caplog: pytest.LogCaptureFixture) -> None:
-    client = AulaProxyClient("s3cr3t-t0ken")
+    client = AulaProxyClient(MagicMock(), "s3cr3t-t0ken")
     caplog.set_level(logging.DEBUG)
-    with patch.object(client._session, "get", return_value=_failed()):
-        client._refresh_token(AulaWidgetId.WEEKPLAN_PARENTS)
+    with patch.object(client._session, "get", new_callable=AsyncMock, return_value=_failed()):
+        asyncio.run(client._refresh_token(AulaWidgetId.WEEKPLAN_PARENTS))
     assert "Failed to refresh token for widget 0004: HTTP 500" in caplog.text
     for secret in SECRETS:
         assert secret not in caplog.text
 
 
 def test_a_widget_token_that_is_no_text_is_not_logged(caplog: pytest.LogCaptureFixture) -> None:
-    client = AulaProxyClient("s3cr3t-t0ken")
-    response = Mock(spec=Response)
+    client = AulaProxyClient(MagicMock(), "s3cr3t-t0ken")
+    response = Mock(spec=HttpResponse)
     response.status_code = 200
     response.ok = True
     response.json = Mock(return_value={"data": {"token": "s3cr3t-t0ken"}})
-    with patch.object(client._session, "get", return_value=response):
-        client._refresh_token(AulaWidgetId.WEEKPLAN_PARENTS)
+    with patch.object(client._session, "get", new_callable=AsyncMock, return_value=response):
+        asyncio.run(client._refresh_token(AulaWidgetId.WEEKPLAN_PARENTS))
     assert "non-string data (dict)" in caplog.text
     assert "s3cr3t-t0ken" not in caplog.text
 
@@ -132,7 +133,7 @@ def test_redact_takes_out_tokens_codes_and_passwords(text: str) -> None:
 def test_the_login_clients_log_takes_out_the_authorization_code(caplog: pytest.LogCaptureFixture) -> None:
     from aula_connect.login.client import AulaLoginClient
 
-    client = AulaLoginClient(mitid_username="parent")
+    client = AulaLoginClient(MagicMock(), mitid_username="parent")
     client.log("Found OAuth callback URL: https://www.aula.dk/?code=s3cr3t-t0ken", "ERROR")
     assert "code=REDACTED" in caplog.text
     assert "s3cr3t-t0ken" not in caplog.text
