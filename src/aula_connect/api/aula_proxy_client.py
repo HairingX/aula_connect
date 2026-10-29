@@ -365,7 +365,6 @@ class AulaProxyClient:
                 try:
                     profiles = AulaProfileParser.parse_profiles_response(api_responsedata)
                 except Exception as e:
-                    _LOGGER.info(f"method=profiles.getProfilesByLogin response: {api_response}")
                     _LOGGER.error(f"Error parsing profiles: {e}")
                     raise
                 # _LOGGER.debug("self._profiles "+str(self._profiles))
@@ -381,7 +380,6 @@ class AulaProxyClient:
                 _LOGGER.error(msg)
                 raise AulaCredentialError(msg)
             else:
-                _LOGGER.info(f"method=profiles.getProfilesByLogin response: {api_response}")
                 msg = f"Unknown error occured. Received status code {api_response.status_code}."
                 _LOGGER.error(msg)
                 raise ConnectionRefusedError(msg)
@@ -1284,7 +1282,7 @@ class AulaProxyClient:
         status = HTTPStatus(response.status_code)
         if status.is_server_error:
             if not AulaProxyClient._is_last_attempt(attempt):
-                _LOGGER.debug(f"Request failed due to server error, will retry (attempt {attempt}/{REQUEST_MAX_ATTEMPTS}): {response}")
+                _LOGGER.debug("Request failed due to server error, will retry (attempt %s/%s): HTTP %s", attempt, REQUEST_MAX_ATTEMPTS, response.status_code)
                 return True
         return False
 

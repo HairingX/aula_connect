@@ -12,6 +12,8 @@ from aiohttp.abc import AbstractCookieJar
 from multidict import CIMultiDict, CIMultiDictProxy
 from yarl import URL
 
+from .redact import redact
+
 DEFAULT_TIMEOUT = 30.0
 """Seconds a single request may take."""
 
@@ -19,15 +21,18 @@ MAX_REDIRECTS = 30
 REDIRECTS = (301, 302, 303, 307, 308)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class SentRequest:
     """What was sent, for logs: the method and the URL."""
 
     method: str
     url: str
 
+    def __repr__(self) -> str:
+        return f"<SentRequest {self.method} {redact(self.url)}>"
 
-@dataclass
+
+@dataclass(repr=False)
 class HttpResponse:
     """A response read in full."""
 
@@ -39,6 +44,10 @@ class HttpResponse:
     encoding: str
     request: SentRequest
     history: list[HttpResponse] = field(default_factory=lambda: [])
+
+    def __repr__(self) -> str:
+        # Aula's URLs carry the access token, and its answers the children's data.
+        return f"<HttpResponse {self.status_code} {self.request.method} {redact(self.url)}>"
 
     @property
     def ok(self) -> bool:

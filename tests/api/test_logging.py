@@ -137,3 +137,24 @@ def test_the_login_clients_log_takes_out_the_authorization_code(caplog: pytest.L
     client.log("Found OAuth callback URL: https://www.aula.dk/?code=s3cr3t-t0ken", "ERROR")
     assert "code=REDACTED" in caplog.text
     assert "s3cr3t-t0ken" not in caplog.text
+
+
+def test_a_response_shown_in_a_log_has_neither_the_token_nor_the_body() -> None:
+    from multidict import CIMultiDict, CIMultiDictProxy
+
+    from aula_connect.http import SentRequest
+
+    url = "https://www.aula.dk/api/v23?method=x&access_token=s3cr3t-t0ken"
+    response = HttpResponse(
+        status_code=503,
+        reason="Service Unavailable",
+        url=url,
+        headers=CIMultiDictProxy(CIMultiDict[str]()),
+        content=b'{"name": "Alma Example"}',
+        encoding="utf-8",
+        request=SentRequest("GET", url),
+    )
+    for text in (repr(response), str(response), repr(response.request), f"{response}"):
+        assert "s3cr3t-t0ken" not in text
+        assert "Alma Example" not in text
+    assert "503" in repr(response)
