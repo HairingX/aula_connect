@@ -36,7 +36,9 @@ MitID app to scan.
 `aula_connect.testing` has a simulated Aula for tests, on local test servers:
 `SimulatedAulaLogin` answers the whole login chain - Aula's OAuth, UniLogin, NemLog-in and a
 simulated MitID - and `SimulatedAulaApi` Aula's API and its widgets, with the data a test gives
-it. Each checks the cookies, tokens and proofs the real one checks.
+it. Each checks the cookies, tokens and proofs the real one checks, and takes a
+`mitid_connect.testing.Network` that gives each answer a latency and fails a share of them, for
+stress tests.
 
 ## Origin and licence
 

@@ -20,7 +20,7 @@ from urllib.parse import urlencode
 
 from aiohttp import web
 from aiohttp.test_utils import TestServer
-from mitid_connect.testing import SimulatedMitID
+from mitid_connect.testing import Network, SimulatedMitID
 
 from .api.aula_proxy_client import AulaProxyClient
 from .login import AulaLoginClient
@@ -41,8 +41,11 @@ class SimulatedAulaLogin:
     pointed at it.
     """
 
-    def __init__(self, users: set[str] | None = None, identities: list[str] | None = None) -> None:
-        self.mitid = SimulatedMitID(users if users is not None else {"parent"})
+    def __init__(
+        self, users: set[str] | None = None, identities: list[str] | None = None, network: Network | None = None
+    ) -> None:
+        self.network = network or Network()
+        self.mitid = SimulatedMitID(users if users is not None else {"parent"}, network=self.network)
         self.identities = identities or []
         """The identities NemLog-in offers to choose between; none, one is taken at once."""
         self.chosen_identity: str | None = None
@@ -52,6 +55,8 @@ class SimulatedAulaLogin:
         """Whether the broker shows its confirmation page before going back to Aula."""
         self.refresh_tokens: dict[str, str] = {}
         """The refresh tokens issued, and the access token each was issued with."""
+        self.renewals = 0
+        """How many times an access token was renewed with a refresh token."""
         self.revoked: set[str] = set()
         self._state = ""
         self._code_challenge = ""
@@ -60,7 +65,7 @@ class SimulatedAulaLogin:
         self._saml_mitid = secrets.token_hex(8)
         self._saml_aula = secrets.token_hex(8)
         self._server: TestServer | None = None
-        self.app = web.Application()
+        self.app = web.Application(middlewares=[self.network.middleware])
         self.app.add_routes(
             [
                 web.get("/login/simplesaml/module.php/oidc/authorize.php", self._authorize),
@@ -275,6 +280,7 @@ class SimulatedAulaLogin:
             if refresh not in self.refresh_tokens or refresh in self.revoked:
                 return web.json_response({"error": "invalid_grant"}, status=400)
             self.revoked.add(refresh)
+            self.renewals += 1
             return self._issue()
         verifier = str(form.get("code_verifier", ""))
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
@@ -308,8 +314,13 @@ class SimulatedAulaApi:
 
     VERSION = 23
 
-    def __init__(self, access_token: str = "access") -> None:
+    def __init__(
+        self, access_token: str = "access", network: Network | None = None, login: SimulatedAulaLogin | None = None
+    ) -> None:
         self.access_token = access_token
+        self.network = network or Network()
+        self.login = login
+        """The login chain whose access tokens the API accepts too, as Aula's API accepts its own."""
         self.csrf_token = secrets.token_hex(8)
         self.widgets = ["0001", "0004", "0029"]
         self.guardian = {"profileId": 201, "displayName": "Pat Example", "userId": "pat"}
@@ -336,7 +347,7 @@ class SimulatedAulaApi:
         self.requests: list[str] = []
         """The Aula API methods and widget paths asked for, in order."""
         self._server: TestServer | None = None
-        self.app = web.Application()
+        self.app = web.Application(middlewares=[self.network.middleware])
         self.app.add_routes(
             [
                 web.get(f"/api/v{self.VERSION}", self._api),
@@ -382,7 +393,9 @@ class SimulatedAulaApi:
         return authorization.startswith("Bearer ") and authorization.removeprefix("Bearer ") in self.widget_tokens
 
     async def _api(self, request: web.Request) -> web.Response:
-        if request.query.get("access_token") != self.access_token:
+        token = request.query.get("access_token")
+        issued = self.login.refresh_tokens.values() if self.login is not None else ()
+        if token != self.access_token and token not in issued:
             return web.json_response({"status": {"code": 448, "message": "Unauthorized"}}, status=401)
         if request.method == "POST" and request.headers.get("csrfp-token") != self.csrf_token:
             return web.json_response({"status": {"code": 403, "message": "CSRF"}}, status=403)
