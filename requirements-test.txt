@@ -4,6 +4,6 @@ pyright==1.1.414
 pytest==9.2.0
 pytest-cov==7.1.0
 # The package's dependencies, at the versions Home Assistant's integration pins.
-beautifulsoup4==4.13.3
+beautifulsoup4==4.15.0
 mitid_connect==0.1.0
 aiohttp==3.14.5
