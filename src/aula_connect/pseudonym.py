@@ -62,6 +62,23 @@ def _is_id_key(key: str) -> bool:
     return key.lower() in _ID_KEYS or key.endswith(("Id", "Ids", "ID", "_id", "Filter"))
 
 
+def _hidden(value: str) -> str:
+    return "x" * len(value)
+
+
+def hidden(value: Any) -> Any:
+    """`value` with every text as many "x" and every digit a 9, each in its place."""
+    if isinstance(value, dict):
+        return {name: hidden(item) for name, item in cast(dict[str, Any], value).items()}
+    if isinstance(value, list):
+        return [hidden(item) for item in cast(list[Any], value)]
+    if isinstance(value, str):
+        return _hidden(value)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return int(re.sub(r"\d", "9", str(value)))
+    return value
+
+
 def _letter(index: int, byte: int) -> str:
     # Consonants and vowels in turn, so that a made-up name can be read as one.
     pool = _CONSONANTS if index % 2 == 0 else _VOWELS
@@ -79,7 +96,8 @@ class Pseudonymiser:
     `learn` everything first, then replace it: a name learnt from one answer is replaced in all.
     """
 
-    def __init__(self, key: bytes) -> None:
+    def __init__(self, key: bytes, secrets: Iterable[str] = ()) -> None:
+        """Replace with `key`, and every one of `secrets` anywhere by as many "x"."""
         self._key = key
         self._ids: dict[str, str] = {}
         self._known_ids: set[str] = set()
@@ -88,6 +106,9 @@ class Pseudonymiser:
         self._contacts: dict[str, str] = {}
         self._in_text: dict[str, Callable[[str], str]] = {}
         self._pattern: re.Pattern[str] | None = None
+        for secret in secrets:
+            if secret:
+                self._in_text[secret] = _hidden
 
     def _stream(self, kind: str, value: str, size: int, attempt: int = 0) -> bytes:
         stream = b""
@@ -187,7 +208,7 @@ class Pseudonymiser:
         def replace(match: re.Match[str]) -> str:
             text = match.group()
             if match.lastgroup == "token":
-                return "x" * len(text)
+                return _hidden(text)
             if match.lastgroup == "link":
                 return self.url(text)
             if match.lastgroup == "known":
@@ -209,7 +230,7 @@ class Pseudonymiser:
             name, item = match.group(1), match.group(3)
             plain = unquote(name).removesuffix("[]")
             if _SECRET.search(plain):
-                item = "x" * len(item)
+                item = _hidden(item)
             elif request and _is_id_key(plain):
                 item = self._id(item)
             elif request:
@@ -230,14 +251,12 @@ class Pseudonymiser:
             return [self.value(item, key) for item in cast(list[Any], value)]
         if isinstance(value, bool) or not isinstance(value, str | int):
             return value
+        if _SECRET.search(key):
+            return hidden(value)
         if isinstance(value, int):
             text = str(value)
-            if _SECRET.search(key):
-                return int(re.sub(r"\d", "9", text))
             known = len(text) >= _MIN_ID_ELSEWHERE and text in self._known_ids
             return int(self._id(text)) if _is_id_key(key) or known else value
-        if _SECRET.search(key):
-            return "x" * len(value)
         if _is_id_key(key):
             return self._id(value)
         if _is_name_key(key):
@@ -272,21 +291,37 @@ def shapes(value: Any, path: str = "") -> dict[str, list[str]]:
     return {at: sorted(kinds) for at, kinds in sorted(found.items())}
 
 
-def pseudonymised(exchanges: Iterable[Exchange], key: bytes) -> list[dict[str, Any]]:
-    """The exchanges, each with what tells who someone is replaced, one key making the same."""
+def pseudonymised(exchanges: Iterable[Exchange], key: bytes, secrets: Iterable[str] = ()) -> list[dict[str, Any]]:
+    """The exchanges, each with what tells who someone is replaced, one key making the same, and
+    each of `secrets` hidden wherever it is. What a request for a token answers is hidden whole."""
     kept = list(exchanges)
-    pseudonymiser = Pseudonymiser(key)
+    pseudonymiser = Pseudonymiser(key, secrets)
     for exchange in kept:
         pseudonymiser.learn(exchange.request)
         pseudonymiser.learn(exchange.response)
     return [
         {
+            "at": exchange.at.isoformat(),
             "endpoint": pseudonymiser.text(exchange.endpoint),
             "method": exchange.method,
             "url": pseudonymiser.url(exchange.url, request=True),
             "request": pseudonymiser.value(exchange.request),
             "status": exchange.status,
-            "response": pseudonymiser.value(exchange.response),
+            "headers": pseudonymiser.value(exchange.headers),
+            "error": None if exchange.error is None else pseudonymiser.text(exchange.error),
+            "response": _answer(pseudonymiser, exchange),
         }
         for exchange in kept
     ]
+
+
+def _answer(pseudonymiser: Pseudonymiser, exchange: Exchange) -> Any:
+    answer: Any = pseudonymiser.value(exchange.response)
+    fields = _fields(answer)
+    if "token" in exchange.endpoint.lower() and fields is not None and "data" in fields:
+        return {**fields, "data": hidden(fields["data"])}
+    return answer
+
+
+def _fields(value: Any) -> dict[str, Any] | None:
+    return cast(dict[str, Any], value) if isinstance(value, dict) else None

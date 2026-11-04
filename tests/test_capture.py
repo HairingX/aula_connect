@@ -85,7 +85,12 @@ def _account(aula: SimulatedAulaApi) -> None:
         "sensitive": False,
         "subject": "Tur for Alma",
     }
-    aula.threads = [thread, {**thread, "id": 771235, "sensitive": True}]
+    aula.threads = [
+        thread,
+        {**thread, "id": 771235, "sensitive": True},
+        {**thread, "id": 771236},
+        {**thread, "id": 771237},
+    ]
     aula.messages = {
         771234: [{"id": "m88123", "messageType": "Message", "sendDateTime": "2026-12-28T08:00:00+00:00", "sender": teacher, "text": text}],
         771235: [{"id": "m88124", "text": {"html": "<p>Fortroligt</p>"}}],
@@ -186,6 +191,8 @@ def test_reading_everything_reads_each_kind_once_and_no_sensitive_thread() -> No
         "presence.getDailyOverview",
         "messaging.getThreads",
         "messaging.getMessagesForThread",
+        "messaging.getMessagesForThread",
+        "messaging.getMessagesForThread",
         "notifications.getNotificationsForActiveProfile",
         "calendar.getEventsByProfileIdsAndResourceIds",
         "calendar.getBirthdayEventsForInstitutions",
@@ -204,8 +211,10 @@ def test_the_answers_handed_out_hold_no_one_s_name_id_or_contact_and_no_token() 
     for value in PERSONAL:
         assert value not in text, value
     assert "access_token" not in text
-    assert "aulaToken" not in text
     assert "eyJ" not in text
+    assert "parent" not in text
+    for token in client.api.secrets():
+        assert token not in text
     assert "Fortroligt" not in text
     assert any(value in json.dumps(_raw(client), ensure_ascii=False) for value in PERSONAL)
 
@@ -230,7 +239,8 @@ def test_a_value_is_replaced_by_the_same_one_wherever_it_is() -> None:
     assert birthday["name"] == child["name"]
     assert thread["subject"] == f"Tur for {first}"
     assert f"Hej {first}," in thread["latestMessage"]["text"]["html"]
-    assert f"threadId={thread['id']}" in exchanges["messaging.getMessagesForThread"]["url"]
+    urls = [exchange["url"] for exchange in export["exchanges"] if exchange["endpoint"] == "messaging.getMessagesForThread"]
+    assert any(f"threadId={thread['id']}&" in url for url in urls)
     assert event["title"] == "Dansk"
     assert event["startDateTime"] == "2026-12-29T08:00:00+00:00"
 
@@ -322,12 +332,63 @@ def test_a_recorder_keeps_the_newest_answer_to_each_request_and_forgets_the_olde
     assert recorder.exchanges() == []
 
 
-def test_a_recorder_keeps_no_request_for_a_token_and_the_query_it_was_sent_with() -> None:
+def test_a_recorder_keeps_a_request_for_a_token_too_and_the_query_it_was_sent_with() -> None:
     recorder = Recorder()
     recorder.record("GET", "https://aula.example/api?method=aulaToken.getAulaToken", None, None, _response(b'"t"'))
     recorder.record("POST", "https://aula.example/widget/read", {"week": "2026-W53"}, {"id": 1}, _response(b"[]"))
+    token, widget = recorder.exchanges()
+    assert token.endpoint == "aulaToken.getAulaToken"
+    assert (widget.endpoint, widget.url, widget.request) == ("/widget/read", "https://aula.example/widget/read?week=2026-W53", {"id": 1})
+
+
+def test_a_recorder_keeps_a_failure_after_the_request_succeeds_and_an_error_in_place_of_an_answer() -> None:
+    recorder = Recorder(failures=2)
+    recorder.record("GET", "https://aula.example/api?method=a", None, None, _response(b'{"down": true}', 503))
+    recorder.record("GET", "https://aula.example/api?method=a", None, None, _response(b'{"n": 1}'))
+    recorder.record_error("GET", "https://aula.example/api?method=b&access_token=s3cr3t", None, None, TimeoutError("slow"))
+    first, second, third = recorder.exchanges()
+    assert (first.endpoint, first.status, first.failed) == ("a", 503, True)
+    assert (second.endpoint, second.status, second.failed) == ("a", 200, False)
+    assert (third.endpoint, third.status, third.error, third.failed) == ("b", 0, "TimeoutError: slow", True)
+    recorder.record_error("GET", "https://aula.example/api?method=c", None, None, ConnectionError("gone"))
+    assert [exchange.endpoint for exchange in recorder.exchanges() if exchange.failed] == ["b", "c"]
+
+
+def test_a_recorder_joins_the_headers_of_one_name() -> None:
+    recorder = Recorder()
+    headers: CIMultiDict[str] = CIMultiDict([("Set-Cookie", "a=1"), ("Set-Cookie", "b=2"), ("Server", "x")])
+    response = _response(b"{}")
+    response.headers = CIMultiDictProxy(headers)
+    recorder.record("GET", "https://aula.example/api?method=a", None, None, response)
     [exchange] = recorder.exchanges()
-    assert (exchange.endpoint, exchange.url, exchange.request) == ("/widget/read", "https://aula.example/widget/read?week=2026-W53", {"id": 1})
+    assert exchange.headers == {"Set-Cookie": "a=1, b=2", "Server": "x"}
+
+
+def test_a_request_that_gets_no_answer_is_kept_as_its_error_and_handed_out() -> None:
+    async def run() -> dict[str, Any]:
+        async with (
+            SimulatedAulaLogin() as login,
+            SimulatedAulaApi(login=login) as aula,
+            aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as session,
+        ):
+            login_client = login.point(AulaLoginClient(session, "parent"))
+            tokens = (await login_client.authenticate())["tokens"]
+
+            async def dropped(request: web.Request) -> web.StreamResponse:
+                assert request.transport is not None
+                request.transport.close()
+                return web.Response()
+
+            aula.answers["presence.getDailyOverview"] = dropped
+            client = AulaClient(session, tokens["access_token"], tokens["refresh_token"], time.time() + 3600, "parent", login_client)
+            aula.point(client.api)
+            await client.read_everything(START, END)
+            return client.responses(KEY)
+
+    export = asyncio.run(run())
+    [failure] = [exchange for exchange in export["exchanges"] if exchange["endpoint"] == "presence.getDailyOverview"]
+    assert failure["status"] == 0 and failure["response"] is None
+    assert failure["error"].startswith(("ServerDisconnectedError", "ClientOSError", "ClientPayloadError"))
 
 
 def test_reading_everything_gives_up_where_only_a_new_login_helps(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -350,3 +411,8 @@ def test_reading_everything_gives_up_where_only_a_new_login_helps(monkeypatch: p
 
     with pytest.raises(AulaCredentialError):
         asyncio.run(run())
+
+
+def test_reading_everything_reads_the_messages_of_every_thread_not_marked_sensitive() -> None:
+    _, _, _, aula = _read_everything()
+    assert aula.requests.count("messaging.getMessagesForThread") == 3

@@ -189,13 +189,12 @@ class AulaClient:
         await self._ensure_valid_token()
         return await self._proxy.get_messages(thread)
 
-    async def read_everything(
-        self, start: datetime.datetime, end: datetime.datetime, threads: int = 3
-    ) -> List[str]:
+    async def read_everything(self, start: datetime.datetime, end: datetime.datetime) -> List[str]:
         """Read once all this client reads from Aula, so that its recorder holds each answer.
 
         `start` and `end` bound the calendar events, birthdays, weekly plans and newsletters; the
-        messages of the newest `threads` threads not marked sensitive are read too.
+        messages of every thread of the newest page are read too, but for those Aula marks
+        sensitive, which the client never reads.
 
         Returns:
             What could not be read, each with its error.
@@ -222,7 +221,7 @@ class AulaClient:
         institutions = {child.institution_profile.id: child.institution_profile for child in children}
         await read("daily overviews", partial(self.get_daily_overviews, profiles))
         found = await read("message threads", self.get_message_threads) or []
-        for thread in [thread for thread in found if not thread.sensitive][:threads]:
+        for thread in [thread for thread in found if not thread.sensitive]:
             await read("messages", partial(self.get_messages, thread))
         await read("notifications", partial(self.get_notifications, children))
         for institution in institutions.values():
@@ -237,12 +236,14 @@ class AulaClient:
         return failed
 
     def responses(self, key: bytes) -> dict[str, Any]:
-        """The newest answers Aula gave this client, with what tells who someone is replaced.
+        """The newest answers and failures Aula gave this client, with who someone is replaced.
 
         One `key` replaces a value by the same other value each time; see `aula_connect.pseudonym`.
-        The answers are listed with Aula's API version and the type at each place of each kind.
+        The MitID username and every token the client holds are hidden wherever they are. The
+        answers are listed with Aula's API version and the type at each place of each kind.
         """
-        exchanges = pseudonymised(self._proxy.recorder.exchanges(), key)
+        secrets = [self._mitid_username, self._access_token, self._refresh_token, *self._proxy.secrets()]
+        exchanges = pseudonymised(self._proxy.recorder.exchanges(), key, secrets)
         kinds: dict[str, dict[str, set[str]]] = {}
         for exchange in exchanges:
             found = kinds.setdefault(f"{exchange['method']} {exchange['endpoint']}", {})
