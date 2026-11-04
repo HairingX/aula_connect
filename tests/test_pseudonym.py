@@ -156,3 +156,17 @@ def test_the_endpoint_of_a_widget_s_path_has_its_ids_replaced() -> None:
     child = str(replaced["response"]["childId"])
     assert replaced["endpoint"] == f"/files/{child}"
     assert replaced["url"] == f"https://widget.example/files/{child}"
+
+
+def test_a_token_becomes_as_many_x_wherever_it_stands() -> None:
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl"
+    replaced: dict[str, Any] = _replaced(
+        {"value": jwt, "note": f"Brug {jwt} nu", "header": "Bearer abc.DEF-123", "bearerToken": 42, "jwt": "abc"}
+    )
+    assert replaced == {
+        "value": "x" * len(jwt),
+        "note": f"Brug {'x' * len(jwt)} nu",
+        "header": "x" * len("Bearer abc.DEF-123"),
+        "bearerToken": 99,
+        "jwt": "xxx",
+    }
