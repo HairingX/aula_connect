@@ -3,6 +3,7 @@ value of its length, so that what belongs together still does, and the text stil
 
 Ids, names, contact details and links are found by the keys Aula gives them under; a name, an
 id or a contact detail found so is replaced inside every text too. Secrets become as many "x".
+A token, whatever key it is under or text it is in, becomes as many "x" too.
 Dates and times, numbers that are no ids, and the rest of a text are kept as they are: a name
 the answers give under no key of a name, such as another child's in a message, stays.
 """
@@ -21,7 +22,9 @@ from .capture import Exchange
 _CONSONANTS = "bdfghjklmnprstv"
 _VOWELS = "aeiouy"
 
-_SECRET = re.compile(r"token|password|secret|csrf|cookie|signature|authorization|apikey", re.IGNORECASE)
+_SECRET = re.compile(r"token|password|secret|csrf|cookie|signature|authorization|apikey|jwt|bearer", re.IGNORECASE)
+# A token Aula or a widget gives, wherever it stands: a JSON web token, or one sent as a bearer.
+_TOKEN = r"eyJ[\w-]+\.[\w-]+\.[\w-]*|(?i:bearer)\s+[\w.~+/=-]+"
 _ID_KEYS = {"id", "ids", "institutioncode", "unilogin", "userid", "key", "bucket"}
 # Keys whose text is who someone is, besides those ending in "name": the one who fetches a child,
 # the author of a task, the institution a notification is from.
@@ -176,13 +179,15 @@ class Pseudonymiser:
             return value
         if self._pattern is None:
             known = "|".join(re.escape(text) for text in sorted(self._in_text, key=len, reverse=True))
-            alternatives = [f"(?P<link>{_LINK})"]
+            alternatives = [f"(?P<token>{_TOKEN})", f"(?P<link>{_LINK})"]
             alternatives += [f"(?P<known>(?<!\\w)(?:{known})(?!\\w))"] if known else []
             alternatives += [f"(?P<email>{_EMAIL})", f"(?P<cpr>{_CPR})", f"(?P<phone>{_PHONE})"]
             self._pattern = re.compile("|".join(alternatives))
 
         def replace(match: re.Match[str]) -> str:
             text = match.group()
+            if match.lastgroup == "token":
+                return "x" * len(text)
             if match.lastgroup == "link":
                 return self.url(text)
             if match.lastgroup == "known":

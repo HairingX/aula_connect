@@ -205,6 +205,7 @@ def test_the_answers_handed_out_hold_no_one_s_name_id_or_contact_and_no_token() 
         assert value not in text, value
     assert "access_token" not in text
     assert "aulaToken" not in text
+    assert "eyJ" not in text
     assert "Fortroligt" not in text
     assert any(value in json.dumps(_raw(client), ensure_ascii=False) for value in PERSONAL)
 
