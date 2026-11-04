@@ -33,6 +33,31 @@ async with aiohttp.ClientSession() as session:
 While the login runs, `login.get_qr_codes_svg()` gives the two QR codes to show in turn for the
 MitID app to scan.
 
+## What Aula sends
+
+A client keeps the newest answer to each request it sends Aula and its widgets, in memory only:
+200 requests at most, never a request for a token, and no headers. To see what Aula sends, read
+everything once and take the answers with who someone is replaced:
+
+```python
+failed = await client.read_everything(start, end)  # what could not be read, and why
+answers = client.responses(key)  # key: bytes kept secret, the same each time
+```
+
+`answers` holds Aula's API version, each request with its answer, and the type at each place of
+each kind of answer, to see where Aula has changed. Every value that tells who someone is gets
+another of the same length and kinds of characters, the same one wherever it is and for as long as
+the key is the same, so that what belongs together still does:
+
+- ids, under their keys and inside texts and links, and numbers that are known ids;
+- names, word by word, under their keys and, written with a capital, inside every text;
+- e-mail addresses, phone numbers and CPR numbers anywhere, and addresses under their keys;
+- the query of every link, as it can sign it. A secret, such as a token, becomes as many "x".
+
+Dates, times, other numbers and the rest of each text are kept. A name Aula gives under no key of
+a name, such as another child's in a message, is kept with them, so the answers are still personal
+data: share them only with who needs them. A thread marked sensitive is never read.
+
 `aula_connect.testing` has a simulated Aula for tests, on local test servers:
 `SimulatedAulaLogin` answers the whole login chain - Aula's OAuth, UniLogin, NemLog-in and a
 simulated MitID - and `SimulatedAulaApi` Aula's API and its widgets, with the data a test gives
