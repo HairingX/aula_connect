@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, cast
 from datetime import datetime, timedelta, date, timezone
 import json
 import logging
+from ..capture import Recorder
 from ..http import HttpResponse, HttpSession
 from ..redact import redact
 from .aula_errors import AulaCredentialError, AulaApiError
@@ -108,17 +109,22 @@ class _TokenSession(HttpSession):
 
     _access_token: str = ""
     api_base: str = API
+    recorder: Recorder | None = None
 
     def set_access_token(self, token: str) -> None:
         """Send `token` with every request of the Aula API from now on."""
         self._access_token = token
 
     async def request(self, method: str, url: str, **kwargs: Any) -> HttpResponse:
-        """Send a request, with the access token where it is one of the Aula API."""
+        """Send a request, with the access token where it is one of the Aula API, and record it."""
+        sent = url
         if self._access_token and self.api_base in url:
             separator = "&" if "?" in url else "?"
-            url = f"{url}{separator}access_token={self._access_token}"
-        return await super().request(method, url, **kwargs)
+            sent = f"{url}{separator}access_token={self._access_token}"
+        response = await super().request(method, sent, **kwargs)
+        if self.recorder is not None:
+            self.recorder.record(method, url, kwargs.get("params"), kwargs.get("json"), response)
+        return response
 
 
 @dataclass
@@ -155,6 +161,9 @@ class AulaProxyClient:
         self._username = username_for_meebook
         self._session = _TokenSession(session, timeout=REQUEST_TIMEOUT)
         self._session.set_access_token(access_token)
+        self.recorder = Recorder()
+        """The newest answers Aula gave this client."""
+        self._session.recorder = self.recorder
         self.meebook_api = MEEBOOK_API
         self.easyiq_api = EASYIQ_API
         self.min_uddannelse_api = MIN_UDDANNELSE_API

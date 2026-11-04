@@ -1,6 +1,8 @@
 """Aula read with tokens that are kept fresh: the API client and the login client together."""
 
-from typing import Callable, List
+from collections.abc import Awaitable
+from functools import partial
+from typing import Any, Callable, List
 import datetime
 import logging
 import asyncio
@@ -16,6 +18,7 @@ from .api.module import (
     AulaDailyOverview,
     AulaEasyiqWeeklyPlan,
     AulaInstitutionProfile,
+    AulaMessage,
     AulaLoginData,
     AulaMessageThread,
     AulaProfile,
@@ -26,6 +29,7 @@ from .api.module import (
     AULA_NOTIFICATION_TYPES,
 )
 from .api.aula_errors import AulaCredentialError
+from .pseudonym import pseudonymised, shapes
 from .login import AulaLoginClient
 from .redact import redact
 from .login.exceptions import NetworkError, TokenExpiredError
@@ -179,6 +183,79 @@ class AulaClient:
         """The birthdays at the children's institutions in the period."""
         await self._ensure_valid_token()
         return await self._proxy.get_birthday_events(profiles, start_datetime, end_datetime)
+
+    async def get_messages(self, thread: AulaMessageThread) -> List[AulaMessage]:
+        """The newest page of the messages of a thread not marked sensitive."""
+        await self._ensure_valid_token()
+        return await self._proxy.get_messages(thread)
+
+    async def read_everything(
+        self, start: datetime.datetime, end: datetime.datetime, threads: int = 3
+    ) -> List[str]:
+        """Read once all this client reads from Aula, so that its recorder holds each answer.
+
+        `start` and `end` bound the calendar events, birthdays, weekly plans and newsletters; the
+        messages of the newest `threads` threads not marked sensitive are read too.
+
+        Returns:
+            What could not be read, each with its error.
+
+        Raises:
+            AulaCredentialError: The tokens can no longer be renewed; only a new login helps.
+        """
+        failed: List[str] = []
+
+        async def read[T](what: str, call: Callable[[], Awaitable[T]]) -> T | None:
+            try:
+                return await call()
+            except AulaCredentialError:
+                raise
+            except Exception as error:
+                failed.append(f"{what}: {redact(error)}")
+                return None
+
+        login = await read("profiles", self.login)
+        if login is None:
+            return failed
+        profiles = login.profiles
+        children = AulaProxyClient.flatten_children(profiles)
+        institutions = {child.institution_profile.id: child.institution_profile for child in children}
+        await read("daily overviews", partial(self.get_daily_overviews, profiles))
+        found = await read("message threads", self.get_message_threads) or []
+        for thread in [thread for thread in found if not thread.sensitive][:threads]:
+            await read("messages", partial(self.get_messages, thread))
+        await read("notifications", partial(self.get_notifications, children))
+        for institution in institutions.values():
+            await read("calendar events", partial(self.get_calendar_events, [institution], start, end))
+        await read("birthdays", partial(self.get_birthday_events, children, start, end))
+        if self.has_widget(AulaWidgetId.WEEKPLAN_PARENTS):
+            await read("weekly plans", partial(self.get_weekly_plans, children, start, end))
+        if self.has_widget(AulaWidgetId.EASYIQ_WEEKPLAN):
+            await read("EasyIQ weekly plans", partial(self.get_easyiq_weekly_plans, children, start, end))
+        if self.has_widget(AulaWidgetId.MY_EDUCATION_WEEKLETTER):
+            await read("newsletters", partial(self.get_newsletters, children, start, end))
+        return failed
+
+    def responses(self, key: bytes) -> dict[str, Any]:
+        """The newest answers Aula gave this client, with what tells who someone is replaced.
+
+        One `key` replaces a value by the same other value each time; see `aula_connect.pseudonym`.
+        The answers are listed with Aula's API version and the type at each place of each kind.
+        """
+        exchanges = pseudonymised(self._proxy.recorder.exchanges(), key)
+        kinds: dict[str, dict[str, set[str]]] = {}
+        for exchange in exchanges:
+            found = kinds.setdefault(f"{exchange['method']} {exchange['endpoint']}", {})
+            for at, types in shapes(exchange["response"]).items():
+                found.setdefault(at, set()).update(types)
+        return {
+            "aula_api_version": self._proxy.api_version,
+            "exchanges": exchanges,
+            "shapes": {
+                kind: {at: sorted(types) for at, types in sorted(found.items())}
+                for kind, found in sorted(kinds.items())
+            },
+        }
 
     async def get_daily_overviews(
         self, profiles: List[AulaProfile]
