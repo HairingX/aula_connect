@@ -115,13 +115,23 @@ class _TokenSession(HttpSession):
         """Send `token` with every request of the Aula API from now on."""
         self._access_token = token
 
+    @property
+    def access_token(self) -> str:
+        """The access token sent with every request of the Aula API."""
+        return self._access_token
+
     async def request(self, method: str, url: str, **kwargs: Any) -> HttpResponse:
         """Send a request, with the access token where it is one of the Aula API, and record it."""
         sent = url
         if self._access_token and self.api_base in url:
             separator = "&" if "?" in url else "?"
             sent = f"{url}{separator}access_token={self._access_token}"
-        response = await super().request(method, sent, **kwargs)
+        try:
+            response = await super().request(method, sent, **kwargs)
+        except Exception as error:
+            if self.recorder is not None:
+                self.recorder.record_error(method, url, kwargs.get("params"), kwargs.get("json"), error)
+            raise
         if self.recorder is not None:
             self.recorder.record(method, url, kwargs.get("params"), kwargs.get("json"), response)
         return response
@@ -171,6 +181,10 @@ class AulaProxyClient:
         # One widget token fetch, and one recovery, at a time: reads at once would otherwise
         # each fetch the same token, or each reset the session under the others.
         self._token_refresh_lock = asyncio.Lock()
+
+    def secrets(self) -> list[str]:
+        """The access token and the widgets' tokens this client holds."""
+        return [self._session.access_token, *(token.bearer_token for token in self._tokens.values())]
 
     def set_token_refresh_callback(self, callback: Callable[[], Awaitable[bool]]) -> None:
         """Renew the access token with `callback` where Aula refuses it.

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from aula_connect.capture import Exchange
 from aula_connect.pseudonym import Pseudonymiser, pseudonymised, shapes
 
 KEY = b"a key for the tests"
+AT = datetime(2026, 12, 28, 8, tzinfo=timezone.utc)
 
 
 def _replaced(value: object, key: str = "") -> Any:
@@ -112,17 +114,20 @@ def test_a_request_keeps_its_query_but_for_its_ids_and_secrets() -> None:
 
 def test_exchanges_are_replaced_after_learning_from_all_of_them() -> None:
     exchanges = [
-        Exchange("GET", "https://aula.example/api?method=a", None, 200, "Alma er syg"),
-        Exchange("POST", "https://aula.example/widget", {"childId": 3301846}, 200, {"name": "Alma"}),
+        Exchange("GET", "https://aula.example/api?method=a", None, 200, "Alma er syg", AT),
+        Exchange("POST", "https://aula.example/widget", {"childId": 3301846}, 200, {"name": "Alma"}, AT),
     ]
     first, second = pseudonymised(exchanges, KEY)
     alma: str = second["response"]["name"]
     assert first == {
+        "at": "2026-12-28T08:00:00+00:00",
         "endpoint": "a",
         "method": "GET",
         "url": "https://aula.example/api?method=a",
         "request": None,
         "status": 200,
+        "headers": {},
+        "error": None,
         "response": f"{alma} er syg",
     }
     assert second["endpoint"] == "/widget" and second["request"] != {"childId": 3301846}
@@ -151,7 +156,7 @@ def test_a_widget_s_filters_are_ids_however_short() -> None:
 
 
 def test_the_endpoint_of_a_widget_s_path_has_its_ids_replaced() -> None:
-    exchange = Exchange("GET", "https://widget.example/files/3301846", None, 200, {"childId": 3301846})
+    exchange = Exchange("GET", "https://widget.example/files/3301846", None, 200, {"childId": 3301846}, AT)
     [replaced] = pseudonymised([exchange], KEY)
     child = str(replaced["response"]["childId"])
     assert replaced["endpoint"] == f"/files/{child}"
@@ -170,3 +175,32 @@ def test_a_token_becomes_as_many_x_wherever_it_stands() -> None:
         "bearerToken": 99,
         "jwt": "xxx",
     }
+
+
+def test_what_a_request_for_a_token_answers_is_hidden_whole_but_its_status() -> None:
+    answer = {"status": {"code": 0, "message": "OK"}, "data": "opaque-widget-token", "version": 23}
+    exchange = Exchange("GET", "https://aula.example/api?method=aulaToken.getAulaToken&widgetId=0004", None, 200, answer, AT)
+    [replaced] = pseudonymised([exchange], KEY)
+    assert replaced["response"] == {**answer, "data": "x" * len("opaque-widget-token")}
+
+
+def test_the_secrets_given_are_hidden_wherever_they_are() -> None:
+    exchange = Exchange(
+        "GET",
+        "https://aula.example/api?method=a",
+        None,
+        0,
+        None,
+        AT,
+        headers={"Set-Cookie": "Csrfp-Token=abc; path=/", "Content-Type": "application/json"},
+        error="ClientError: logged in as parent-user with s3cr3t",
+    )
+    [replaced] = pseudonymised([exchange], KEY, ["parent-user", "s3cr3t", ""])
+    assert replaced["error"] == "ClientError: logged in as xxxxxxxxxxx with xxxxxx"
+    assert replaced["headers"] == {"Set-Cookie": "x" * len("Csrfp-Token=abc; path=/"), "Content-Type": "application/json"}
+
+
+def test_hidden_keeps_each_value_s_type_and_length() -> None:
+    from aula_connect.pseudonym import hidden
+
+    assert hidden({"a": ["xy", 120, -7, 1.5, None, True]}) == {"a": ["xx", 999, -9, 1.5, None, True]}
