@@ -164,8 +164,9 @@ class AulaProxyClient:
     """Aula's API and its widgets, read on an access token into typed models.
 
     A read Aula refuses raises: AulaCredentialError where the access token is refused,
-    PermissionError where the data is not the user's, AulaApiError otherwise. An access token
-    refused once is renewed through the callback set, where one is, and the read tried again.
+    PermissionError where the data is not the user's, AulaApiError otherwise; an answer that
+    cannot be read raises ParseError. An access token refused once is renewed through the
+    callback set, where one is, and the read tried again.
     """
 
     api_version:int = int(API_VERSION)

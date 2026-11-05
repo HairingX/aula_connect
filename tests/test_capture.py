@@ -17,7 +17,7 @@ from aiohttp import web
 from multidict import CIMultiDict, CIMultiDictProxy
 
 from aula_connect import Anomaly, AnomalyKind, AulaClient, AulaLoginClient
-from aula_connect.api.aula_errors import AulaCredentialError, ParseError
+from aula_connect.api.aula_errors import AulaCredentialError, MethodRefusedError, ParseError
 from aula_connect.api.aula_proxy_client import AulaProxyClient
 from aula_connect.capture import Recorder
 from aula_connect.http import HttpResponse, SentRequest
@@ -499,7 +499,7 @@ def test_reading_refuses_a_method_that_does_not_only_get(method: str) -> None:
     async def act(client: AulaClient, aula: SimulatedAulaApi) -> None:
         await client.read(method, {}, KEY)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(MethodRefusedError):
         _client_run(act)
 
 
@@ -508,7 +508,7 @@ def test_reading_refuses_params_that_name_another_method_or_a_token(name: str) -
     async def act(client: AulaClient, aula: SimulatedAulaApi) -> None:
         await client.read("profiles.getProfilesByLogin", {name: "messaging.getMessagesForThread"}, KEY)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(MethodRefusedError):
         _client_run(act)
 
 
