@@ -14,7 +14,7 @@ import aiohttp
 import pytest
 from aiohttp import web
 
-from aula_connect.api.aula_errors import AulaApiError, AulaCredentialError
+from aula_connect.api.aula_errors import AulaApiError, AulaCredentialError, ParseError
 from aula_connect.api.aula_proxy_client import AulaProxyClient, _decode_jwt_exp, _describe_token
 from aula_connect.api.models.aula_profile_models import AulaChildProfile, AulaToken
 from aula_connect.api.models.constants import AulaWidgetId
@@ -170,37 +170,43 @@ def test_profiles_in_a_form_not_known_fail_the_login_without_logging_them(caplog
         aula.answers["profiles.getProfilesByLogin"] = _json({"status": {"message": "OK"}, "data": {"profiles": "Pat Example"}})
         await client.login()
 
-    with pytest.raises(AttributeError):
+    with pytest.raises(ParseError) as failed:
         _run(act, login=False)
     assert "Error parsing profiles: AttributeError" in caplog.text
-    assert "Pat Example" not in caplog.text
+    assert "Pat Example" not in caplog.text and "Pat Example" not in str(failed.value)
 
 
 @pytest.mark.parametrize(
-    "answer",
+    ("answer", "noted"),
     [
-        _json({"status": {"code": 500}}, status=500),
-        _json({"status": {"message": "OK"}}),
-        _json({"status": {"message": "OK"}, "data": {"userId": "pat", "pageConfiguration": {"widgetConfigurations": [{"widget": 5}]}}}),
+        (_json({"status": {"code": 500}}, status=500), []),
+        (_json({"status": {"message": "OK"}}), ["profile context"]),
+        (
+            _json({"status": {"message": "OK"}, "data": {"userId": "pat", "pageConfiguration": {"widgetConfigurations": [{"widget": 5}]}}}),
+            ["widgets"],
+        ),
     ],
 )
-def test_a_profile_context_aula_does_not_give_leaves_the_login_without_widgets(answer: Handler) -> None:
-    async def act(aula: SimulatedAulaApi, client: AulaProxyClient) -> list[Any]:
+def test_a_profile_context_aula_does_not_give_leaves_the_login_without_widgets(answer: Handler, noted: list[str]) -> None:
+    async def act(aula: SimulatedAulaApi, client: AulaProxyClient) -> tuple[list[Any], list[str]]:
         aula.answers["profiles.getProfileContext"] = answer
         data = await client.login()
-        return data.widgets
+        return data.widgets, [anomaly.detail for anomaly in client.anomalies()]
 
-    assert _run(act, login=False) == []
+    assert _run(act, login=False) == ([], noted)
 
 
-@pytest.mark.parametrize("answer", [_json({}, status=500), _json({"status": {"message": "OK"}, "data": {"institutionProfiles": 5}})])
-def test_master_data_aula_does_not_give_leaves_the_children_without_their_main_group(answer: Handler) -> None:
-    async def act(aula: SimulatedAulaApi, client: AulaProxyClient) -> str:
+@pytest.mark.parametrize(
+    ("answer", "noted"),
+    [(_json({}, status=500), []), (_json({"status": {"message": "OK"}, "data": {"institutionProfiles": 5}}), ["profile master data"])],
+)
+def test_master_data_aula_does_not_give_leaves_the_children_without_their_main_group(answer: Handler, noted: list[str]) -> None:
+    async def act(aula: SimulatedAulaApi, client: AulaProxyClient) -> tuple[str, list[str]]:
         aula.answers["profiles.getProfileMasterData"] = answer
         await client.login()
-        return _children(client)[0].main_group.name
+        return _children(client)[0].main_group.name, [anomaly.detail for anomaly in client.anomalies()]
 
-    assert _run(act, login=False) == ""
+    assert _run(act, login=False) == ("", noted)
 
 
 def test_a_read_aula_answers_without_content_gives_nothing() -> None:
@@ -216,10 +222,10 @@ def test_a_read_in_a_form_not_known_fails_without_logging_it(caplog: pytest.LogC
         aula.answers["presence.getDailyOverview"] = _json({"status": {"message": "OK"}, "data": [{"id": "Alma Example"}]})
         await client.get_daily_overviews(client._login_result.profiles if client._login_result else [])
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ParseError) as failed:
         _run(act)
     assert "Error parsing daily overviews: ValueError" in caplog.text
-    assert "Alma Example" not in caplog.text
+    assert "Alma Example" not in caplog.text and "Alma Example" not in str(failed.value)
 
 
 def test_a_server_error_with_a_status_python_has_no_name_for_is_tried_again() -> None:
@@ -358,6 +364,27 @@ def test_a_widget_failing_after_the_first_week_skips_the_week(name: str, caplog:
     error = _json({"message": "down"}, status=500)
     _widget(name, first_week, error, error, error, end=TWO_WEEKS)
     assert f"Failed to retrieve {name} data: HTTP 500" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("name", "answer", "what"),
+    [
+        ("Meebook", [{"weekPlan": 5}], "weekly plans"),
+        ("EasyIQ", {"Events": 5}, "EasyIQ weekly plans"),
+        ("MinUddannelse", {"personer": 5}, "newsletters"),
+    ],
+)
+def test_a_widget_answer_that_cannot_be_read_fails_the_read_and_is_noted(name: str, answer: object, what: str) -> None:
+    key, read = WIDGET_READS[name]
+
+    async def act(aula: SimulatedAulaApi, client: AulaProxyClient) -> list[str]:
+        aula.weekly_plans = [PLAN]
+        aula.answers[key] = _json(answer)
+        with pytest.raises(ParseError):
+            await read(client, _children(client), ONE_WEEK)
+        return [anomaly.detail for anomaly in client.anomalies()]
+
+    assert _run(act) == [what]
 
 
 def test_a_meebook_week_answered_with_no_plans_is_skipped(caplog: pytest.LogCaptureFixture) -> None:

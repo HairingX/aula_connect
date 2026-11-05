@@ -1,6 +1,8 @@
 """The client of Aula's API and of its widgets' (Meebook, EasyIQ, MinUddannelse), on an access token."""
 
 import base64
+from functools import partial
+import re
 import binascii
 import asyncio
 from dataclasses import dataclass
@@ -14,7 +16,7 @@ from ..anomaly import Anomaly, AnomalyKind
 from ..capture import Recorder
 from ..http import HttpResponse, HttpSession
 from ..redact import redact
-from .aula_errors import AulaCredentialError, AulaApiError
+from .aula_errors import AulaCredentialError, AulaApiError, ParseError
 from .models.constants import AulaWidgetId
 from .models.aula_notification_models import NotificationArea
 from .models.module import (
@@ -56,6 +58,8 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+_AREA_NAME = re.compile(r"[A-Za-z_]{1,40}")
+
 REQUEST_MAX_ATTEMPTS = 3
 """How many times a request is sent before a network or server error is given up on."""
 REQUEST_TIMEOUT = 30
@@ -66,6 +70,13 @@ tokens cannot be relied on, as it is now and then already past when it hands one
 RECOVERY_COOLDOWN = timedelta(minutes=10)
 """The least time between two recoveries of a widget token. During an outage at Aula, recovering
 again only churns its token endpoint."""
+
+
+def _area_name(area: object) -> str:
+    """The name of a notification area, or what stands in for one Aula sent that is no name."""
+    if area is None:
+        return "<missing>"
+    return area if isinstance(area, str) and _AREA_NAME.fullmatch(area) else "<unrecognised>"
 
 
 def _describe_token(token: 'AulaToken | None') -> str:
@@ -153,8 +164,9 @@ class AulaProxyClient:
     """Aula's API and its widgets, read on an access token into typed models.
 
     A read Aula refuses raises: AulaCredentialError where the access token is refused,
-    PermissionError where the data is not the user's, AulaApiError otherwise. An access token
-    refused once is renewed through the callback set, where one is, and the read tried again.
+    PermissionError where the data is not the user's, AulaApiError otherwise; an answer that
+    cannot be read raises ParseError. An access token refused once is renewed through the
+    callback set, where one is, and the read tried again.
     """
 
     api_version:int = int(API_VERSION)
@@ -188,9 +200,21 @@ class AulaProxyClient:
     def _note(self, kind: AnomalyKind, detail: str) -> None:
         self._anomalies[(kind, detail)] = datetime.now(timezone.utc)
 
+    def _note_api_version(self) -> None:
+        if self.api_version != int(API_VERSION):
+            self._note(AnomalyKind.API_VERSION_CHANGED, str(self.api_version))
+
     def anomalies(self, since: datetime | None = None) -> tuple[Anomaly, ...]:
-        """What this client met that it does not know or could not read, each once, the latest
-        first; only what was met at or after `since` where given."""
+        """What this client met that it does not know or could not read, the latest first.
+
+        Each is given once, and only what was last met at or after `since` where given. The
+        client keeps them for as long as it lives, and is read on the event loop it runs on.
+
+        Raises:
+            ValueError: `since` has no time zone.
+        """
+        if since is not None and since.utcoffset() is None:
+            raise ValueError("since must have a time zone")
         found = [
             Anomaly(kind, detail, seen)
             for (kind, detail), seen in self._anomalies.items()
@@ -333,6 +357,7 @@ class AulaProxyClient:
             except (ValueError, KeyError, TypeError, TimeoutError, aiohttp.ClientError) as e:
                 _LOGGER.debug("Quick login check failed, will proceed with full login: %s", type(e).__name__)
         if self._is_logged_in and self._login_result is not None:
+            self._note_api_version()
             return self._login_result
 
         while True:
@@ -362,8 +387,7 @@ class AulaProxyClient:
             widgets = await self._read_profile_context(profiles)
             await self._read_main_groups(profiles)
 
-        if self.api_version != int(API_VERSION):
-            self._note(AnomalyKind.API_VERSION_CHANGED, str(self.api_version))
+        self._note_api_version()
         result = AulaLoginData(profiles=profiles, widgets=widgets, api_version=self.api_version)
         self._login_result = result
         _LOGGER.debug("Login found %s profiles and the widgets %s", len(profiles), ", ".join(widget.widget_id for widget in widgets))
@@ -396,12 +420,13 @@ class AulaProxyClient:
             widgetsdata = [configuration["widget"] for configuration in data["pageConfiguration"]["widgetConfigurations"]]
         except (ValueError, KeyError, TypeError) as e:
             _LOGGER.warning("Failed to parse %s response: %s", api_method, type(e).__name__)
-            self._note(AnomalyKind.UNREADABLE_RESPONSE, api_method)
+            self._note(AnomalyKind.UNREADABLE_RESPONSE, "profile context")
             return []
         try:
             return AulaProfileParser.parse_widgets(widgetsdata)
         except Exception as e:
             _LOGGER.error("Error parsing widgets: %s", type(e).__name__)
+            self._note(AnomalyKind.UNREADABLE_RESPONSE, "widgets")
             return []
 
     async def _read_main_groups(self, profiles: List[AulaProfile]) -> None:
@@ -417,7 +442,7 @@ class AulaProxyClient:
             relations = AulaProfileParser.parse_profile_master_data_response(responsedata)
         except Exception as e:
             _LOGGER.warning("Failed to parse %s response: %s", api_method, type(e).__name__)
-            self._note(AnomalyKind.UNREADABLE_RESPONSE, api_method)
+            self._note(AnomalyKind.UNREADABLE_RESPONSE, "profile master data")
             return
         children = {child.id: child for child in self.flatten_children(profiles)}
         for relation in relations:
@@ -455,19 +480,23 @@ class AulaProxyClient:
         """
         response = await self._retry_on_401(await self._send(api_method, send), send)
         if response.status_code != HTTPStatus.OK:
-            _LOGGER.debug("Failed to retrieve %s: HTTP %s %s, %s", what, response.status_code, response.reason, redact(response.request.url))
+            _LOGGER.debug("Failed to retrieve %s: HTTP %s %s", what, response.status_code, response.reason)
             self._raise_error(response)
             return None
         return response.json()
 
     def _parse[T, D](self, what: str, parser: Callable[[D], T], data: D) -> T:
-        """`data` parsed, the failure logged without the data, and noted, where it cannot be."""
+        """`data` parsed, the failure logged without the data, and noted, where it cannot be.
+
+        Raises:
+            ParseError: `data` could not be parsed; its text holds none of the data.
+        """
         try:
             return parser(data)
         except Exception as e:
             _LOGGER.error("Error parsing %s: %s", what, type(e).__name__)
             self._note(AnomalyKind.UNREADABLE_RESPONSE, what)
-            raise
+            raise ParseError(f"Aula's answer of {what} could not be read ({type(e).__name__})") from None
 
     async def get_birthday_events(self, profiles: List[AulaChildProfile], start_datetime: datetime, end_datetime: datetime) -> List[AulaBirthdayEvent]:
         """The birthdays at the children's institutions from `start_datetime` to `end_datetime`."""
@@ -517,7 +546,7 @@ class AulaProxyClient:
         overview_ids = set(overview.id for overview in daily_overviews)
         for child in children:
             if child.id not in overview_ids:
-                _LOGGER.warning("Unable to retrieve presence data from Aula from child with id %s. Some data will be missing from sensor entities.", child.id)
+                _LOGGER.warning("Unable to retrieve presence data from Aula for a child. Some data will be missing from sensor entities.")
         _LOGGER.debug("Fetched daily overviews: %s", len(daily_overviews))
         return daily_overviews
 
@@ -562,7 +591,7 @@ class AulaProxyClient:
         for item in cast(list[dict[str, Any]], data.get("data") or []):
             area = item.get("notificationArea")
             if area not in known:
-                self._note(AnomalyKind.UNKNOWN_NOTIFICATION_AREA, str(area))
+                self._note(AnomalyKind.UNKNOWN_NOTIFICATION_AREA, _area_name(area))
         _LOGGER.debug("Fetched notifications: %s", len(notifications))
         return notifications
 
@@ -639,7 +668,7 @@ class AulaProxyClient:
             for respdata in plans:
                 respdata["from_date"] = from_date
                 respdata["to_date"] = from_date + timedelta(days=6)
-            weeklyplans.extend(AulaWeeklyPlanParser.parse_weekly_plans(plans))
+            weeklyplans.extend(self._parse("weekly plans", AulaWeeklyPlanParser.parse_weekly_plans, plans))
         _LOGGER.debug("Fetched meebook weekplan: %s", len(weeklyplans))
         return weeklyplans
 
@@ -687,7 +716,11 @@ class AulaProxyClient:
                     if response is None or response.status_code != HTTPStatus.OK:
                         self._widget_failed(call, response, first)
                         continue
-                    plan = AulaEasyiqWeekplanParser.parse_events_as_weekly_plan(response.json(), child.first_name, str(child.user_id), from_date)
+                    plan = self._parse(
+                        "EasyIQ weekly plans",
+                        partial(AulaEasyiqWeekplanParser.parse_events_as_weekly_plan, child_name=child.first_name, child_user_id=str(child.user_id), from_date=from_date),
+                        response.json(),
+                    )
                     if plan.daily_plans:
                         weeklyplans.append(plan)
             from_datetime += timedelta(weeks=1)
@@ -715,7 +748,7 @@ class AulaProxyClient:
             if response is None or response.status_code != HTTPStatus.OK:
                 self._widget_failed(call, response, first)
             else:
-                newsletters.extend(AulaNewsletterParser.parse_response(response.json(), from_date))
+                newsletters.extend(self._parse("newsletters", partial(AulaNewsletterParser.parse_response, from_date=from_date), response.json()))
             first = False
         _LOGGER.debug("Fetched newsletters: %s", len(newsletters))
         return newsletters

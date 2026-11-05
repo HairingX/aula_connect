@@ -68,11 +68,15 @@ read, but not those of a thread Aula marks sensitive, which the client never rea
 `client.anomalies(since=None)` names what Aula sent that the client does not know or could not
 read, each `Anomaly` once with its `kind`, its `detail` and when it was `last_seen`, the latest
 first: a notification of an unknown area, an answer that could not be read, a version of Aula's API
-the client was not made for. None tells any of Aula's data, so a caller can show them and ask for
-the answers when Aula changes; `since` leaves out what was not met again lately.
-`client.read(method,
-params, key)` asks one method of Aula's API that only gets, named `<area>.get<What>`, and gives its
-answer as `responses` gives one; the messages of a thread are never asked this way.
+the client was not made for, met again at each login while it lasts. None tells any of Aula's data,
+so a caller can show them and ask for the answers when Aula changes; `since`, a time with its zone,
+leaves out what was not met again since. A later minor version may add a kind, never rename or
+remove one, so a caller handles a kind it does not know.
+
+`client.read(method, params, key)` asks one method of Aula's API that only gets, named
+`<area>.get<What>`, and gives its answer as `responses` gives one. It raises `MethodRefusedError`
+for any other method, for the messages of a thread or a secure document, and for `params` that
+name a method or a token.
 
 `aula_connect.testing` has a simulated Aula for tests, on local test servers:
 `SimulatedAulaLogin` answers the whole login chain - Aula's OAuth, UniLogin, NemLog-in and a
