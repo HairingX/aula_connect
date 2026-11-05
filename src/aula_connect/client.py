@@ -6,6 +6,8 @@ from typing import Any, Callable, List
 import datetime
 import logging
 import asyncio
+import re
+from urllib.parse import urlencode
 import time
 
 import aiohttp
@@ -234,6 +236,31 @@ class AulaClient:
         if self.has_widget(AulaWidgetId.MY_EDUCATION_WEEKLETTER):
             await read("newsletters", partial(self.get_newsletters, children, start, end))
         return failed
+
+    @property
+    def surprises(self) -> List[str]:
+        """What Aula sent that this client could not read or does not know, and a new version of
+        Aula's API, each said without Aula's data; none while all is as expected."""
+        version = self._proxy.api_version
+        moved = [f"Aula's API is at version {version}, not {API_VERSION}"] if version != int(API_VERSION) else []
+        return sorted(self._proxy.surprises) + moved
+
+    async def read(self, method: str, params: dict[str, str], key: bytes) -> dict[str, Any]:
+        """Ask Aula's API `method` with `params`, and give its answer as `responses` gives one.
+
+        Only a method that gets, named "<area>.get<What>", is asked, and never the messages of a
+        thread, which may be marked sensitive.
+
+        Raises:
+            ValueError: The method is not one that only gets.
+        """
+        if not re.fullmatch(r"[a-z]+\.get[A-Z][A-Za-z]*", method) or method == "messaging.getMessagesForThread":
+            raise ValueError(f"{method!r} is not a method that only gets")
+        await self._ensure_valid_token()
+        await self._proxy.custom_api_call(f"?{urlencode({'method': method, **params})}", None)
+        secrets = [self._mitid_username, self._access_token, self._refresh_token, *self._proxy.secrets()]
+        answers = pseudonymised(self._proxy.recorder.exchanges(), key, secrets)
+        return [answer for answer in answers if answer["endpoint"] == method][-1]
 
     def responses(self, key: bytes) -> dict[str, Any]:
         """The newest answers and failures Aula gave this client, with who someone is replaced.
