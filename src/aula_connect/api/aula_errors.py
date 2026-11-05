@@ -5,6 +5,10 @@ class ParseError(Exception):
     Exception raised when parsing the response from the server fails.
     """
 
+class MethodRefusedError(ValueError):
+    """A method of Aula's API that is not asked for the caller: one that does more than get, or
+    that gets what may be marked sensitive."""
+
 class AulaCredentialError(Exception):
     """
     Exception raised when the credentials were rejected.

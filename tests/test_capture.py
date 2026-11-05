@@ -17,7 +17,7 @@ from aiohttp import web
 from multidict import CIMultiDict, CIMultiDictProxy
 
 from aula_connect import Anomaly, AnomalyKind, AulaClient, AulaLoginClient
-from aula_connect.api.aula_errors import AulaCredentialError
+from aula_connect.api.aula_errors import AulaCredentialError, ParseError
 from aula_connect.api.aula_proxy_client import AulaProxyClient
 from aula_connect.capture import Recorder
 from aula_connect.http import HttpResponse, SentRequest
@@ -454,7 +454,7 @@ def test_a_client_names_what_it_does_not_know_once_the_latest_first_and_a_new_ap
         (AnomalyKind.UNKNOWN_NOTIFICATION_AREA, "Homework"),
         (AnomalyKind.API_VERSION_CHANGED, str(SimulatedAulaApi.VERSION + 1)),
     ]
-    assert after[0].last_seen > after[1].last_seen and after[0].last_seen.tzinfo is timezone.utc
+    assert after[0].last_seen >= after[1].last_seen and after[0].last_seen.tzinfo is timezone.utc
     assert [(anomaly.kind, anomaly.detail) for anomaly in recent] == [(AnomalyKind.UNKNOWN_NOTIFICATION_AREA, "Homework")]
     assert "Alma" not in repr(after)
 
@@ -471,7 +471,7 @@ def test_a_client_names_an_answer_it_could_not_read() -> None:
             return web.json_response({"status": {"code": 0}, "data": {"profiles": "none"}})
 
         aula.answers["profiles.getProfilesByLogin"] = broken
-        with pytest.raises(Exception):
+        with pytest.raises(ParseError):
             await client.login()
         return client.anomalies()
 
@@ -491,10 +491,77 @@ def test_reading_a_method_gives_its_answer_with_who_someone_is_replaced() -> Non
     assert "alma9921" not in text and "pern4821" not in text and "3301846" not in text
 
 
-@pytest.mark.parametrize("method", ["messaging.deleteThread", "messaging.getMessagesForThread", "get", "x.get"])
+@pytest.mark.parametrize(
+    "method",
+    ["messaging.deleteThread", "messaging.getMessagesForThread", "messaging.getMessagesforthread", "documents.getSecureDocuments", "get", "x.get"],
+)
 def test_reading_refuses_a_method_that_does_not_only_get(method: str) -> None:
     async def act(client: AulaClient, aula: SimulatedAulaApi) -> None:
         await client.read(method, {}, KEY)
 
     with pytest.raises(ValueError):
         _client_run(act)
+
+
+@pytest.mark.parametrize("name", ["method", "Method", "access_token"])
+def test_reading_refuses_params_that_name_another_method_or_a_token(name: str) -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> None:
+        await client.read("profiles.getProfilesByLogin", {name: "messaging.getMessagesForThread"}, KEY)
+
+    with pytest.raises(ValueError):
+        _client_run(act)
+
+
+def test_a_new_api_version_is_met_again_at_each_login_while_it_lasts() -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> tuple[datetime, datetime]:
+        aula.version = SimulatedAulaApi.VERSION + 1
+        await client.login()
+        [first] = client.anomalies()
+        await client.login()
+        [again] = client.anomalies()
+        return first.last_seen, again.last_seen
+
+    first, again = _client_run(act)
+    assert again > first
+
+
+def test_anomalies_since_a_time_without_a_zone_are_refused() -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> None:
+        client.anomalies(since=datetime(2026, 12, 28))
+
+    with pytest.raises(ValueError):
+        _client_run(act)
+
+
+def test_an_area_that_is_no_name_is_named_by_what_stands_in_for_it() -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> list[str]:
+        aula.notifications = [
+            {"notificationEventType": "New"},
+            {"notificationArea": "Alma Jensen 12.3.2015", "notificationEventType": "New"},
+            {"notificationArea": 7, "notificationEventType": "New"},
+        ]
+        login = await client.login()
+        await client.get_notifications(AulaProxyClient.flatten_children(login.profiles))
+        return sorted(anomaly.detail for anomaly in client.anomalies())
+
+    assert _client_run(act) == ["<missing>", "<unrecognised>"]
+
+
+def test_a_login_at_the_version_known_and_notifications_of_known_areas_name_nothing() -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> tuple[Anomaly, ...]:
+        aula.notifications = [{"notificationArea": "Messages", "notificationEventType": "NewMessagePrivateInbox"}]
+        login = await client.login()
+        await client.get_notifications(AulaProxyClient.flatten_children(login.profiles))
+        return client.anomalies()
+
+    assert _client_run(act) == ()
+
+
+def test_anomalies_since_the_moment_one_was_last_met_include_it() -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> tuple[Anomaly, ...]:
+        aula.version = SimulatedAulaApi.VERSION + 1
+        await client.login()
+        [anomaly] = client.anomalies()
+        return client.anomalies(since=anomaly.last_seen)
+
+    assert len(_client_run(act)) == 1

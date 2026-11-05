@@ -3,12 +3,12 @@
 from collections.abc import Awaitable
 from functools import partial
 from typing import Any, Callable, List
+import asyncio
 import datetime
 import logging
-import asyncio
 import re
-from urllib.parse import urlencode
 import time
+from urllib.parse import urlencode
 
 import aiohttp
 
@@ -31,7 +31,7 @@ from .api.module import (
     AULA_NOTIFICATION_TYPES,
 )
 from .anomaly import Anomaly
-from .api.aula_errors import AulaCredentialError
+from .api.aula_errors import AulaCredentialError, MethodRefusedError
 from .pseudonym import pseudonymised, shapes
 from .login import AulaLoginClient
 from .redact import redact
@@ -239,24 +239,39 @@ class AulaClient:
         return failed
 
     def anomalies(self, since: datetime.datetime | None = None) -> tuple[Anomaly, ...]:
-        """What Aula sent that this client does not know or could not read, and a version of
-        Aula's API it was not made for, each once, the latest first; only what was met at or after
-        `since` where given. None tells any of Aula's data."""
+        """What Aula sent that this client does not know or could not read, the latest first.
+
+        Each is given once - an area, an answer or a version of Aula's API the client was not made
+        for, none telling any of Aula's data - and only what was last met at or after `since`
+        where given. A version Aula's API is at is met again at each login, for as long as it
+        lasts. The client keeps them for as long as it lives, and is read on the event loop it
+        runs on.
+
+        Raises:
+            ValueError: `since` has no time zone.
+        """
         return self._proxy.anomalies(since)
 
     async def read(self, method: str, params: dict[str, str], key: bytes) -> dict[str, Any]:
         """Ask Aula's API `method` with `params`, and give its answer as `responses` gives one.
 
         Only a method that gets, named "<area>.get<What>", is asked, and never the messages of a
-        thread, which may be marked sensitive.
+        thread nor a secure document, which may be marked sensitive.
 
         Raises:
-            ValueError: The method is not one that only gets.
+            MethodRefusedError: The method is not one that only gets, is one of those never
+                asked, or `params` names a method or a token.
         """
-        if not re.fullmatch(r"[a-z]+\.get[A-Z][A-Za-z]*", method) or method == "messaging.getMessagesForThread":
-            raise ValueError(f"{method!r} is not a method that only gets")
+        if (
+            not re.fullmatch(r"[a-z]+\.get[A-Z][A-Za-z]*", method)
+            or method.lower() == "messaging.getmessagesforthread"
+            or "secure" in method.lower()
+        ):
+            raise MethodRefusedError(f"{method!r} is not a method that only gets")
+        if {"method", "access_token"} & {name.lower() for name in params}:
+            raise MethodRefusedError("params must not name a method or a token")
         await self._ensure_valid_token()
-        await self._proxy.custom_api_call(f"?{urlencode({'method': method, **params})}", None)
+        await self._proxy.custom_api_call(f"?{urlencode({**params, 'method': method})}", None)
         secrets = [self._mitid_username, self._access_token, self._refresh_token, *self._proxy.secrets()]
         answers = pseudonymised(self._proxy.recorder.exchanges(), key, secrets)
         return [answer for answer in answers if answer["endpoint"] == method][-1]
