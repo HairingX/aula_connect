@@ -8,6 +8,7 @@ import json
 import re
 import time
 from datetime import datetime, timezone
+from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 import aiohttp
@@ -17,6 +18,7 @@ from multidict import CIMultiDict, CIMultiDictProxy
 
 from aula_connect import AulaClient, AulaLoginClient
 from aula_connect.api.aula_errors import AulaCredentialError
+from aula_connect.api.aula_proxy_client import AulaProxyClient
 from aula_connect.capture import Recorder
 from aula_connect.http import HttpResponse, SentRequest
 from aula_connect.testing import SimulatedAulaApi, SimulatedAulaLogin
@@ -416,3 +418,71 @@ def test_reading_everything_gives_up_where_only_a_new_login_helps(monkeypatch: p
 def test_reading_everything_reads_the_messages_of_every_thread_not_marked_sensitive() -> None:
     _, _, _, aula = _read_everything()
     assert aula.requests.count("messaging.getMessagesForThread") == 3
+
+
+def _client_run[T](act: Callable[[AulaClient, SimulatedAulaApi], Awaitable[T]]) -> T:
+    async def run() -> T:
+        async with (
+            SimulatedAulaLogin() as login,
+            SimulatedAulaApi(login=login) as aula,
+            aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as session,
+        ):
+            login_client = login.point(AulaLoginClient(session, "parent"))
+            tokens = (await login_client.authenticate())["tokens"]
+            client = AulaClient(session, tokens["access_token"], tokens["refresh_token"], time.time() + 3600, "parent", login_client)
+            aula.point(client.api)
+            return await act(client, aula)
+
+    return asyncio.run(run())
+
+
+def test_a_client_notes_what_it_does_not_know_without_its_data_and_a_new_api_version() -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> tuple[list[str], list[str]]:
+        before = client.surprises
+        aula.version = SimulatedAulaApi.VERSION + 1
+        aula.notifications = [{"notificationArea": "Homework", "notificationEventType": "New", "messageText": "Alma"}]
+        login = await client.login()
+        await client.get_notifications(AulaProxyClient.flatten_children(login.profiles))
+        return before, client.surprises
+
+    before, after = _client_run(act)
+    assert before == []
+    assert after == [
+        "notification area 'Homework' is unknown",
+        f"Aula's API is at version {SimulatedAulaApi.VERSION + 1}, not {SimulatedAulaApi.VERSION}",
+    ]
+
+
+def test_a_client_notes_an_answer_it_could_not_read() -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> list[str]:
+        async def broken(request: web.Request) -> web.Response:
+            return web.json_response({"status": {"code": 0}, "data": {"profiles": "none"}})
+
+        aula.answers["profiles.getProfilesByLogin"] = broken
+        with pytest.raises(Exception):
+            await client.login()
+        return client.surprises
+
+    assert _client_run(act) == ["profiles could not be read"]
+
+
+def test_reading_a_method_gives_its_answer_with_who_someone_is_replaced() -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> dict[str, Any]:
+        _account(aula)
+        await client.login()
+        return await client.read("profiles.getProfileContext", {"portalrole": "guardian"}, KEY)
+
+    answer = _client_run(act)
+    assert answer["endpoint"] == "profiles.getProfileContext"
+    assert "portalrole=guardian" in answer["url"]
+    text = json.dumps(answer, ensure_ascii=False)
+    assert "alma9921" not in text and "pern4821" not in text and "3301846" not in text
+
+
+@pytest.mark.parametrize("method", ["messaging.deleteThread", "messaging.getMessagesForThread", "get", "x.get"])
+def test_reading_refuses_a_method_that_does_not_only_get(method: str) -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> None:
+        await client.read(method, {}, KEY)
+
+    with pytest.raises(ValueError):
+        _client_run(act)

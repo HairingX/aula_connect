@@ -65,6 +65,12 @@ a name, such as another child's in a message, is kept with them, so the answers 
 data: share them only with who needs them. The messages of every thread on the newest page are
 read, but not those of a thread Aula marks sensitive, which the client never reads.
 
+`client.surprises` says, without Aula's data, what Aula sent that the client could not read or
+does not know - a notification of an unknown area, an answer it could not read, a new version of
+Aula's API - so that a caller can ask for the answers when Aula changes. `client.read(method,
+params, key)` asks one method of Aula's API that only gets, named `<area>.get<What>`, and gives its
+answer as `responses` gives one; the messages of a thread are never asked this way.
+
 `aula_connect.testing` has a simulated Aula for tests, on local test servers:
 `SimulatedAulaLogin` answers the whole login chain - Aula's OAuth, UniLogin, NemLog-in and a
 simulated MitID - and `SimulatedAulaApi` Aula's API and its widgets, with the data a test gives

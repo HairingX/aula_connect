@@ -15,6 +15,7 @@ from ..http import HttpResponse, HttpSession
 from ..redact import redact
 from .aula_errors import AulaCredentialError, AulaApiError
 from .models.constants import AulaWidgetId
+from .models.aula_notification_models import NotificationArea
 from .models.module import (
     AULA_NOTIFICATION_TYPES,
     AulaBirthdayEvent,
@@ -173,6 +174,8 @@ class AulaProxyClient:
         self._session.set_access_token(access_token)
         self.recorder = Recorder()
         """The newest answers Aula gave this client."""
+        self.surprises: set[str] = set()
+        """What Aula sent that the client could not read or does not know, said without its data."""
         self._session.recorder = self.recorder
         self.meebook_api = MEEBOOK_API
         self.easyiq_api = EASYIQ_API
@@ -378,6 +381,7 @@ class AulaProxyClient:
             widgetsdata = [configuration["widget"] for configuration in data["pageConfiguration"]["widgetConfigurations"]]
         except (ValueError, KeyError, TypeError) as e:
             _LOGGER.warning("Failed to parse %s response: %s", api_method, type(e).__name__)
+            self.surprises.add(f"{api_method} could not be read")
             return []
         try:
             return AulaProfileParser.parse_widgets(widgetsdata)
@@ -398,6 +402,7 @@ class AulaProxyClient:
             relations = AulaProfileParser.parse_profile_master_data_response(responsedata)
         except Exception as e:
             _LOGGER.warning("Failed to parse %s response: %s", api_method, type(e).__name__)
+            self.surprises.add(f"{api_method} could not be read")
             return
         children = {child.id: child for child in self.flatten_children(profiles)}
         for relation in relations:
@@ -440,13 +445,13 @@ class AulaProxyClient:
             return None
         return response.json()
 
-    @staticmethod
-    def _parse[T, D](what: str, parser: Callable[[D], T], data: D) -> T:
-        """`data` parsed, the failure logged without the data where it cannot be."""
+    def _parse[T, D](self, what: str, parser: Callable[[D], T], data: D) -> T:
+        """`data` parsed, the failure logged without the data, and noted, where it cannot be."""
         try:
             return parser(data)
         except Exception as e:
             _LOGGER.error("Error parsing %s: %s", what, type(e).__name__)
+            self.surprises.add(f"{what} could not be read")
             raise
 
     async def get_birthday_events(self, profiles: List[AulaChildProfile], start_datetime: datetime, end_datetime: datetime) -> List[AulaBirthdayEvent]:
@@ -538,6 +543,11 @@ class AulaProxyClient:
         data = await self._read(api_method, "notifications", lambda: self._session.get(requesturl, headers=headers))
         if data is None: return []
         notifications = self._parse("notifications", AulaNotificationParser.parse_notification_response, data)
+        known = {str(area) for area in NotificationArea}
+        for item in cast(list[dict[str, Any]], data.get("data") or []):
+            area = item.get("notificationArea")
+            if area not in known:
+                self.surprises.add(f"notification area {str(area)!r} is unknown")
         _LOGGER.debug("Fetched notifications: %s", len(notifications))
         return notifications
 
