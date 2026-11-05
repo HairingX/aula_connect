@@ -65,9 +65,12 @@ a name, such as another child's in a message, is kept with them, so the answers 
 data: share them only with who needs them. The messages of every thread on the newest page are
 read, but not those of a thread Aula marks sensitive, which the client never reads.
 
-`client.surprises` says, without Aula's data, what Aula sent that the client could not read or
-does not know - a notification of an unknown area, an answer it could not read, a new version of
-Aula's API - so that a caller can ask for the answers when Aula changes. `client.read(method,
+`client.anomalies(since=None)` names what Aula sent that the client does not know or could not
+read, each `Anomaly` once with its `kind`, its `detail` and when it was `last_seen`, the latest
+first: a notification of an unknown area, an answer that could not be read, a version of Aula's API
+the client was not made for. None tells any of Aula's data, so a caller can show them and ask for
+the answers when Aula changes; `since` leaves out what was not met again lately.
+`client.read(method,
 params, key)` asks one method of Aula's API that only gets, named `<area>.get<What>`, and gives its
 answer as `responses` gives one; the messages of a thread are never asked this way.
 
