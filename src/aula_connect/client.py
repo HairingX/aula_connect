@@ -30,6 +30,7 @@ from .api.module import (
     AulaChildProfile,
     AULA_NOTIFICATION_TYPES,
 )
+from .anomaly import Anomaly
 from .api.aula_errors import AulaCredentialError
 from .pseudonym import pseudonymised, shapes
 from .login import AulaLoginClient
@@ -237,13 +238,11 @@ class AulaClient:
             await read("newsletters", partial(self.get_newsletters, children, start, end))
         return failed
 
-    @property
-    def surprises(self) -> List[str]:
-        """What Aula sent that this client could not read or does not know, and a new version of
-        Aula's API, each said without Aula's data; none while all is as expected."""
-        version = self._proxy.api_version
-        moved = [f"Aula's API is at version {version}, not {API_VERSION}"] if version != int(API_VERSION) else []
-        return sorted(self._proxy.surprises) + moved
+    def anomalies(self, since: datetime.datetime | None = None) -> tuple[Anomaly, ...]:
+        """What Aula sent that this client does not know or could not read, and a version of
+        Aula's API it was not made for, each once, the latest first; only what was met at or after
+        `since` where given. None tells any of Aula's data."""
+        return self._proxy.anomalies(since)
 
     async def read(self, method: str, params: dict[str, str], key: bytes) -> dict[str, Any]:
         """Ask Aula's API `method` with `params`, and give its answer as `responses` gives one.

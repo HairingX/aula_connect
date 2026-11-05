@@ -16,7 +16,7 @@ import pytest
 from aiohttp import web
 from multidict import CIMultiDict, CIMultiDictProxy
 
-from aula_connect import AulaClient, AulaLoginClient
+from aula_connect import Anomaly, AnomalyKind, AulaClient, AulaLoginClient
 from aula_connect.api.aula_errors import AulaCredentialError
 from aula_connect.api.aula_proxy_client import AulaProxyClient
 from aula_connect.capture import Recorder
@@ -436,34 +436,46 @@ def _client_run[T](act: Callable[[AulaClient, SimulatedAulaApi], Awaitable[T]]) 
     return asyncio.run(run())
 
 
-def test_a_client_notes_what_it_does_not_know_without_its_data_and_a_new_api_version() -> None:
-    async def act(client: AulaClient, aula: SimulatedAulaApi) -> tuple[list[str], list[str]]:
-        before = client.surprises
+def test_a_client_names_what_it_does_not_know_once_the_latest_first_and_a_new_api_version() -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> tuple[tuple[Anomaly, ...], ...]:
+        before = client.anomalies()
         aula.version = SimulatedAulaApi.VERSION + 1
         aula.notifications = [{"notificationArea": "Homework", "notificationEventType": "New", "messageText": "Alma"}]
         login = await client.login()
-        await client.get_notifications(AulaProxyClient.flatten_children(login.profiles))
-        return before, client.surprises
+        children = AulaProxyClient.flatten_children(login.profiles)
+        await client.get_notifications(children)
+        middle = datetime.now(timezone.utc)
+        await client.get_notifications(children)
+        return before, client.anomalies(), client.anomalies(since=middle)
 
-    before, after = _client_run(act)
-    assert before == []
-    assert after == [
-        "notification area 'Homework' is unknown",
-        f"Aula's API is at version {SimulatedAulaApi.VERSION + 1}, not {SimulatedAulaApi.VERSION}",
+    before, after, recent = _client_run(act)
+    assert before == ()
+    assert [(anomaly.kind, anomaly.detail) for anomaly in after] == [
+        (AnomalyKind.UNKNOWN_NOTIFICATION_AREA, "Homework"),
+        (AnomalyKind.API_VERSION_CHANGED, str(SimulatedAulaApi.VERSION + 1)),
     ]
+    assert after[0].last_seen > after[1].last_seen and after[0].last_seen.tzinfo is timezone.utc
+    assert [(anomaly.kind, anomaly.detail) for anomaly in recent] == [(AnomalyKind.UNKNOWN_NOTIFICATION_AREA, "Homework")]
+    assert "Alma" not in repr(after)
 
 
-def test_a_client_notes_an_answer_it_could_not_read() -> None:
-    async def act(client: AulaClient, aula: SimulatedAulaApi) -> list[str]:
+def test_an_anomaly_cannot_be_changed() -> None:
+    anomaly = Anomaly(AnomalyKind.UNREADABLE_RESPONSE, "notifications", datetime.now(timezone.utc))
+    with pytest.raises(AttributeError):
+        setattr(anomaly, "detail", "other")
+
+
+def test_a_client_names_an_answer_it_could_not_read() -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> tuple[Anomaly, ...]:
         async def broken(request: web.Request) -> web.Response:
             return web.json_response({"status": {"code": 0}, "data": {"profiles": "none"}})
 
         aula.answers["profiles.getProfilesByLogin"] = broken
         with pytest.raises(Exception):
             await client.login()
-        return client.surprises
+        return client.anomalies()
 
-    assert _client_run(act) == ["profiles could not be read"]
+    assert [(anomaly.kind, anomaly.detail) for anomaly in _client_run(act)] == [(AnomalyKind.UNREADABLE_RESPONSE, "profiles")]
 
 
 def test_reading_a_method_gives_its_answer_with_who_someone_is_replaced() -> None:

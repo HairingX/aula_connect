@@ -2,6 +2,7 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
+from .anomaly import Anomaly, AnomalyKind
 from .api.models.aula_parser import set_time_zone
 from .client import AulaClient
 from .login import AulaLoginClient
@@ -11,4 +12,4 @@ try:
 except PackageNotFoundError:  # pragma: no cover - only in a checkout that is not installed
     __version__ = "0.0.0"
 
-__all__ = ["AulaClient", "AulaLoginClient", "__version__", "set_time_zone"]
+__all__ = ["Anomaly", "AnomalyKind", "AulaClient", "AulaLoginClient", "__version__", "set_time_zone"]

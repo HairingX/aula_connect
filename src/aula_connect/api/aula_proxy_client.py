@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, cast
 from datetime import datetime, timedelta, date, timezone
 import json
 import logging
+from ..anomaly import Anomaly, AnomalyKind
 from ..capture import Recorder
 from ..http import HttpResponse, HttpSession
 from ..redact import redact
@@ -174,8 +175,7 @@ class AulaProxyClient:
         self._session.set_access_token(access_token)
         self.recorder = Recorder()
         """The newest answers Aula gave this client."""
-        self.surprises: set[str] = set()
-        """What Aula sent that the client could not read or does not know, said without its data."""
+        self._anomalies: dict[tuple[AnomalyKind, str], datetime] = {}
         self._session.recorder = self.recorder
         self.meebook_api = MEEBOOK_API
         self.easyiq_api = EASYIQ_API
@@ -184,6 +184,19 @@ class AulaProxyClient:
         # One widget token fetch, and one recovery, at a time: reads at once would otherwise
         # each fetch the same token, or each reset the session under the others.
         self._token_refresh_lock = asyncio.Lock()
+
+    def _note(self, kind: AnomalyKind, detail: str) -> None:
+        self._anomalies[(kind, detail)] = datetime.now(timezone.utc)
+
+    def anomalies(self, since: datetime | None = None) -> tuple[Anomaly, ...]:
+        """What this client met that it does not know or could not read, each once, the latest
+        first; only what was met at or after `since` where given."""
+        found = [
+            Anomaly(kind, detail, seen)
+            for (kind, detail), seen in self._anomalies.items()
+            if since is None or seen >= since
+        ]
+        return tuple(sorted(found, key=lambda anomaly: anomaly.last_seen, reverse=True))
 
     def secrets(self) -> list[str]:
         """The access token and the widgets' tokens this client holds."""
@@ -349,6 +362,8 @@ class AulaProxyClient:
             widgets = await self._read_profile_context(profiles)
             await self._read_main_groups(profiles)
 
+        if self.api_version != int(API_VERSION):
+            self._note(AnomalyKind.API_VERSION_CHANGED, str(self.api_version))
         result = AulaLoginData(profiles=profiles, widgets=widgets, api_version=self.api_version)
         self._login_result = result
         _LOGGER.debug("Login found %s profiles and the widgets %s", len(profiles), ", ".join(widget.widget_id for widget in widgets))
@@ -381,7 +396,7 @@ class AulaProxyClient:
             widgetsdata = [configuration["widget"] for configuration in data["pageConfiguration"]["widgetConfigurations"]]
         except (ValueError, KeyError, TypeError) as e:
             _LOGGER.warning("Failed to parse %s response: %s", api_method, type(e).__name__)
-            self.surprises.add(f"{api_method} could not be read")
+            self._note(AnomalyKind.UNREADABLE_RESPONSE, api_method)
             return []
         try:
             return AulaProfileParser.parse_widgets(widgetsdata)
@@ -402,7 +417,7 @@ class AulaProxyClient:
             relations = AulaProfileParser.parse_profile_master_data_response(responsedata)
         except Exception as e:
             _LOGGER.warning("Failed to parse %s response: %s", api_method, type(e).__name__)
-            self.surprises.add(f"{api_method} could not be read")
+            self._note(AnomalyKind.UNREADABLE_RESPONSE, api_method)
             return
         children = {child.id: child for child in self.flatten_children(profiles)}
         for relation in relations:
@@ -451,7 +466,7 @@ class AulaProxyClient:
             return parser(data)
         except Exception as e:
             _LOGGER.error("Error parsing %s: %s", what, type(e).__name__)
-            self.surprises.add(f"{what} could not be read")
+            self._note(AnomalyKind.UNREADABLE_RESPONSE, what)
             raise
 
     async def get_birthday_events(self, profiles: List[AulaChildProfile], start_datetime: datetime, end_datetime: datetime) -> List[AulaBirthdayEvent]:
@@ -547,7 +562,7 @@ class AulaProxyClient:
         for item in cast(list[dict[str, Any]], data.get("data") or []):
             area = item.get("notificationArea")
             if area not in known:
-                self.surprises.add(f"notification area {str(area)!r} is unknown")
+                self._note(AnomalyKind.UNKNOWN_NOTIFICATION_AREA, str(area))
         _LOGGER.debug("Fetched notifications: %s", len(notifications))
         return notifications
 
