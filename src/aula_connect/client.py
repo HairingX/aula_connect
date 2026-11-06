@@ -42,6 +42,9 @@ _LOGGER = logging.getLogger(__name__)
 YEAR = datetime.timedelta(days=366)
 """How far ahead the birthdays are read when everything is read."""
 
+BIRTHDAY_PERIOD = datetime.timedelta(days=28)
+"""The longest period one request asks Aula's birthdays for: Aula answers none for a year at once."""
+
 TOKEN_REFRESH_BUFFER_SECONDS = 300
 """Refresh tokens 5 minutes before expiry."""
 
@@ -199,7 +202,7 @@ class AulaClient:
         """Read once all this client reads from Aula, so that its recorder holds each answer.
 
         `start` and `end` bound the calendar events, birthdays, weekly plans and newsletters, and
-        the birthdays of the year from `start` are read too; the messages of every thread of the
+        the birthdays of the year from `start` are read too, four weeks a request; the messages of every thread of the
         newest page are read as well, but for those Aula marks sensitive, which the client never
         reads.
 
@@ -234,7 +237,10 @@ class AulaClient:
         for institution in institutions.values():
             await read("calendar events", partial(self.get_calendar_events, [institution], start, end))
         await read("birthdays", partial(self.get_birthday_events, children, start, end))
-        await read("birthdays of the year", partial(self.get_birthday_events, children, start, start + YEAR))
+        for period in range(0, YEAR.days, BIRTHDAY_PERIOD.days):
+            begin = start + datetime.timedelta(days=period)
+            end_of_period = min(begin + BIRTHDAY_PERIOD, start + YEAR)
+            await read("birthdays of the year", partial(self.get_birthday_events, children, begin, end_of_period))
         if self.has_widget(AulaWidgetId.WEEKPLAN_PARENTS):
             await read("weekly plans", partial(self.get_weekly_plans, children, start, end))
         if self.has_widget(AulaWidgetId.EASYIQ_WEEKPLAN):

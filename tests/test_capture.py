@@ -188,6 +188,8 @@ def test_reading_everything_reads_each_kind_once_the_birthdays_of_the_year_too_a
     assert failed == []
     birthdays = [exchange.url for exchange in client.api.recorder.exchanges() if "getBirthdayEvents" in exchange.url]
     assert any(f"end={(START + timedelta(days=366)):%Y-%m-%d}" in url for url in birthdays)
+    assert any(f"start={(START + timedelta(days=28)):%Y-%m-%d}" in url for url in birthdays)
+    assert not any(f"start={START:%Y-%m-%d}" in url and f"end={(START + timedelta(days=366)):%Y-%m-%d}" in url for url in birthdays)
     assert aula.requests == [
         "profiles.getProfilesByLogin",
         "profiles.getProfileContext",
@@ -200,7 +202,7 @@ def test_reading_everything_reads_each_kind_once_the_birthdays_of_the_year_too_a
         "notifications.getNotificationsForActiveProfile",
         "calendar.getEventsByProfileIdsAndResourceIds",
         "calendar.getBirthdayEventsForInstitutions",
-        "calendar.getBirthdayEventsForInstitutions",
+        *["calendar.getBirthdayEventsForInstitutions"] * 14,
         "aulaToken.getAulaToken",
         "meebook",
         "aulaToken.getAulaToken",
