@@ -1,6 +1,6 @@
 """Aula read with tokens that are kept fresh: the API client and the login client together."""
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Collection
 from functools import partial
 from typing import Any, Callable, List
 import asyncio
@@ -252,11 +252,15 @@ class AulaClient:
         """
         return self._proxy.anomalies(since)
 
-    async def read(self, method: str, params: dict[str, str], key: bytes) -> dict[str, Any]:
+    async def read(
+        self, method: str, params: dict[str, str], key: bytes, reveal: bool | Collection[str] = False
+    ) -> dict[str, Any]:
         """Ask Aula's API `method` with `params`, and give its answer as `responses` gives one.
 
         Only a method that gets, named "<area>.get<What>", is asked, and never the messages of a
-        thread nor a secure document, which may be marked sensitive.
+        thread nor a secure document, which may be marked sensitive. `reveal` keeps the values
+        under the keys it names as Aula sent them, or all the answer where it is True; the MitID
+        username and every token are hidden all the same.
 
         Raises:
             MethodRefusedError: The method is not one that only gets, is one of those never
@@ -273,7 +277,7 @@ class AulaClient:
         await self._ensure_valid_token()
         await self._proxy.custom_api_call(f"?{urlencode({**params, 'method': method})}", None)
         secrets = [self._mitid_username, self._access_token, self._refresh_token, *self._proxy.secrets()]
-        answers = pseudonymised(self._proxy.recorder.exchanges(), key, secrets)
+        answers = pseudonymised(self._proxy.recorder.exchanges(), key, secrets, reveal)
         return [answer for answer in answers if answer["endpoint"] == method][-1]
 
     def responses(self, key: bytes) -> dict[str, Any]:

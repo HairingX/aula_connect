@@ -491,6 +491,21 @@ def test_reading_a_method_gives_its_answer_with_who_someone_is_replaced() -> Non
     assert "alma9921" not in text and "pern4821" not in text and "3301846" not in text
 
 
+def test_reading_a_method_can_reveal_the_keys_asked_for_or_all_but_never_a_token() -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> tuple[dict[str, Any], dict[str, Any]]:
+        _account(aula)
+        await client.login()
+        some = await client.read("profiles.getProfilesByLogin", {}, KEY, reveal=["displayName"])
+        every = await client.read("profiles.getProfilesByLogin", {}, KEY, reveal=True)
+        return some, every
+
+    some, every = _client_run(act)
+    some_text, every_text = json.dumps(some, ensure_ascii=False), json.dumps(every, ensure_ascii=False)
+    assert "Pernille Østergaard" in some_text and "Alma Østergaard" not in some_text and "pern4821" not in some_text
+    assert "Pernille Østergaard" in every_text and "Alma Østergaard" in every_text and "pern4821" in every_text
+    assert set(every["headers"]["Set-Cookie"]) == {"x"}
+
+
 @pytest.mark.parametrize(
     "method",
     ["messaging.deleteThread", "messaging.getMessagesForThread", "messaging.getMessagesforthread", "documents.getSecureDocuments", "get", "x.get"],
