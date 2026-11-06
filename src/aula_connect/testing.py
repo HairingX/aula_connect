@@ -322,6 +322,34 @@ class SimulatedAulaApi:
 
     VERSION = 23
 
+    _THREAD: dict[str, object] = {
+        "extraRecipientsCount": 0,
+        "isArchived": False,
+        "isThreadOrSubscriptionDeleted": False,
+        "marked": False,
+        "muted": False,
+        "read": False,
+        "startedTime": "2026-12-28T08:00:00+00:00",
+    }
+    """What Aula sends of a thread besides what a test gives."""
+    _THREAD_PAGE: dict[str, object] = {
+        "hasSecureDocuments": False,
+        "isArchived": False,
+        "marked": False,
+        "moreMessagesExist": False,
+        "muted": False,
+        "page": 0,
+        "recipients": [],
+        "sensitive": False,
+        "subject": "",
+        "threadStartedDateTime": "2026-12-28T08:00:00+00:00",
+    }
+    """What Aula sends of a page of a thread's messages besides the messages."""
+    _MESSAGE: dict[str, object] = {"canReplyToMessage": True, "hasAttachments": False}
+    """What Aula sends of a message besides what a test gives."""
+    _EVENT: dict[str, object] = {"hasAttachments": False, "requiresNewAnswer": False, "responseRequired": False}
+    """What Aula sends of a calendar event besides what a test gives."""
+
     def __init__(
         self, access_token: str = "access", network: Network | None = None, login: SimulatedAulaLogin | None = None
     ) -> None:
@@ -456,13 +484,27 @@ class SimulatedAulaApi:
             case "presence.getDailyOverview":
                 return self._ok(self.daily_overviews)
             case "messaging.getThreads":
-                return self._ok({"moreMessagesExist": False, "page": 0, "threads": self.threads})
+                threads = [{**self._THREAD, "institutionCode": self.child["institutionCode"], **thread} for thread in self.threads]
+                return self._ok({"moreMessagesExist": False, "page": 0, "threads": threads})
             case "messaging.getMessagesForThread":
-                return self._ok({"messages": self.messages.get(int(request.query["threadId"]), [])})
+                thread_id = int(request.query["threadId"])
+                messages = [{**self._MESSAGE, **message} for message in self.messages.get(thread_id, [])]
+                creator = {"answerDirectlyName": "Pat Example", "fullName": "Pat Example", "metadata": "School"}
+                return self._ok(
+                    {
+                        **self._THREAD_PAGE,
+                        "id": thread_id,
+                        "institutionCode": self.child["institutionCode"],
+                        "lastReadMessageId": str(messages[-1]["id"]) if messages else "",
+                        "messages": messages,
+                        "threadCreator": creator,
+                        "totalMessageCount": len(messages),
+                    }
+                )
             case "notifications.getNotificationsForActiveProfile":
                 return self._ok(self.notifications)
             case "calendar.getEventsByProfileIdsAndResourceIds":
-                return self._ok(self.events)
+                return self._ok([{**self._EVENT, **event} for event in self.events])
             case "calendar.getBirthdayEventsForInstitutions":
                 return self._ok(self.birthdays)
             case "aulaToken.getAulaToken":
