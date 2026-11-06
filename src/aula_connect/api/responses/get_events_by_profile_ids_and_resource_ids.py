@@ -1,9 +1,7 @@
 """Aula's answer to calendar.getEventsByProfileIdsAndResourceIds."""
 
-import datetime
 from typing import List, TypedDict
 from typing import List
-from datetime import datetime
 from typing_extensions import NotRequired
 
 from .common_data import AulaStatusData
@@ -17,15 +15,15 @@ class AulaAnswerData(TypedDict):
 
 class AulaTimeSlotIndexData(TypedDict):
     """A time to choose in a time slot."""
-    endTime: datetime
-    startTime: datetime
+    endTime: str
+    startTime: str
 
 class AulaTimeSlotDetailData(TypedDict):
     """A time slot."""
     answers: List[AulaAnswerData]
-    endDate: datetime
+    endDate: str
     id: int
-    startDate: datetime
+    startDate: str
     timeSlotIndexes: List[AulaTimeSlotIndexData]
 
 class AulaTimeSlotData(TypedDict):
@@ -55,18 +53,18 @@ class AulaEventData(TypedDict):
     """A calendar event."""
     allDay: bool
     belongsToProfiles: List[int]
-    createdDateTime: datetime
-    endDateTime: datetime
+    createdDateTime: str
+    endDateTime: str
     hasAttachments: bool
     id: int
     lesson: NotRequired[AulaLessonData | None]
     primaryResource: NotRequired[AulaPrimaryResourceData | None]
     repeating: NotRequired[str | None]
     requiresNewAnswer: bool
-    responseDeadline: NotRequired[datetime | None]
+    responseDeadline: NotRequired[str | None]
     responseRequired: bool
     responseStatus: NotRequired[str | None]
-    startDateTime: datetime
+    startDateTime: str
     timeSlot: NotRequired[AulaTimeSlotData | None]
     title: str
     type: str

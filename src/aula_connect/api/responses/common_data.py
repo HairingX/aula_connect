@@ -11,7 +11,7 @@ class AulaStatusData(TypedDict):
 class AulaProfilePictureData(TypedDict):
     """A profile picture."""
     bucket: NotRequired[str|None]
-    id: NotRequired[str|None]
+    id: NotRequired[int|None]
     isImageScalingPending: NotRequired[bool|None]
     key: NotRequired[str|None]
     url: NotRequired[str|None]

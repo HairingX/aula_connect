@@ -57,8 +57,10 @@ class AulaMessageThreadParser(AulaParser):
 
     @staticmethod
     def parse_message(data: AulaMessageData | None) -> AulaMessage | None:
-        """A message; raises ValueError for no data."""
+        """A message; None for one of Aula's own with no sender, such as a recipient removed or a
+        message deleted; raises ValueError for no data."""
         if not data: raise ValueError()
+        if not data.get("sender"): return None
         result = AulaMessage(
             can_reply_to_message = AulaMessageThreadParser._parse_nullable_bool(data.get("canReplyToMessage")),
             has_attachments = AulaMessageThreadParser._parse_nullable_bool(data.get("hasAttachments")),

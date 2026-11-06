@@ -1,17 +1,15 @@
 """Aula's answer to calendar.getBirthdayEventsForInstitutions."""
 
-import datetime
-from typing import List, TypedDict
-from typing import List
-from datetime import datetime
+from typing import List, NotRequired, TypedDict
 
 from .common_data import AulaStatusData
 
 class AulaBirthdayEventData(TypedDict):
     """A birthday."""
     institutionProfileId: int
-    birthday: datetime
+    birthday: str
     institutionCode: str
+    mainGroupName: NotRequired[str|None]
     name: str
 
 class AulaGetBirthdayEventsForInstitutionsResponse(TypedDict):
