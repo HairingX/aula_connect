@@ -196,7 +196,8 @@ class Pseudonymiser:
         return known
 
     def _name(self, value: str) -> str:
-        return re.sub(r"\w+", lambda match: self._word(match.group()), value)
+        # Words as a text has them, letters only, so that "2A" in a name is replaced as in a text.
+        return re.sub(r"[^\W\d_]+", lambda match: self._word(match.group()), value)
 
     def learn(self, value: Any, key: str = "") -> None:
         """Take note of the ids, names and contact details in `value`, found under `key`."""

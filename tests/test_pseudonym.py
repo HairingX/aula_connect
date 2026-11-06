@@ -272,3 +272,11 @@ def test_reveal_all_keeps_every_value_but_secrets_and_tokens() -> None:
     pseudonymiser = Pseudonymiser(KEY, ["parent-user"], reveal=True)
     pseudonymiser.learn(answer)
     assert pseudonymiser.value(answer) == {"name": "Alma", "id": 3301846, "items": [f"Hej {'x' * 11}"], "accessToken": "xxx"}
+
+
+def test_a_word_with_a_digit_is_replaced_the_same_in_a_name_and_in_a_text() -> None:
+    pseudonymiser = Pseudonymiser(KEY)
+    answer = {"name": "Bo 2A", "metadata": "Bo 2A", "text": "Klasse 2A"}
+    pseudonymiser.learn(answer)
+    replaced: dict[str, str] = pseudonymiser.value(answer)
+    assert replaced["name"] == replaced["metadata"] and replaced["text"].endswith(replaced["name"].split()[1])
