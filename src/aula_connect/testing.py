@@ -320,7 +320,7 @@ class SimulatedAulaApi:
     at it.
     """
 
-    VERSION = 23
+    VERSION = 25
 
     _THREAD: dict[str, object] = {
         "extraRecipientsCount": 0,

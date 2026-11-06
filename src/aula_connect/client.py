@@ -39,6 +39,9 @@ from .login.exceptions import NetworkError, TokenExpiredError
 
 _LOGGER = logging.getLogger(__name__)
 
+YEAR = datetime.timedelta(days=366)
+"""How far ahead the birthdays are read when everything is read."""
+
 TOKEN_REFRESH_BUFFER_SECONDS = 300
 """Refresh tokens 5 minutes before expiry."""
 
@@ -195,9 +198,10 @@ class AulaClient:
     async def read_everything(self, start: datetime.datetime, end: datetime.datetime) -> List[str]:
         """Read once all this client reads from Aula, so that its recorder holds each answer.
 
-        `start` and `end` bound the calendar events, birthdays, weekly plans and newsletters; the
-        messages of every thread of the newest page are read too, but for those Aula marks
-        sensitive, which the client never reads.
+        `start` and `end` bound the calendar events, birthdays, weekly plans and newsletters, and
+        the birthdays of the year from `start` are read too; the messages of every thread of the
+        newest page are read as well, but for those Aula marks sensitive, which the client never
+        reads.
 
         Returns:
             What could not be read, each with its error.
@@ -230,6 +234,7 @@ class AulaClient:
         for institution in institutions.values():
             await read("calendar events", partial(self.get_calendar_events, [institution], start, end))
         await read("birthdays", partial(self.get_birthday_events, children, start, end))
+        await read("birthdays of the year", partial(self.get_birthday_events, children, start, start + YEAR))
         if self.has_widget(AulaWidgetId.WEEKPLAN_PARENTS):
             await read("weekly plans", partial(self.get_weekly_plans, children, start, end))
         if self.has_widget(AulaWidgetId.EASYIQ_WEEKPLAN):
