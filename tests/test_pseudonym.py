@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -20,7 +22,8 @@ def _replaced(value: object, key: str = "") -> Any:
 
 def test_a_secret_becomes_as_many_x_or_nines_and_is_never_learnt() -> None:
     replaced: dict[str, Any] = _replaced({"access_token": "abc123", "csrfpToken": "q", "pinPassword": 4821, "note": "abc123"})
-    assert replaced == {"access_token": "xxxxxx", "csrfpToken": "x", "pinPassword": 9999, "note": "abc123"}
+    assert {key: value for key, value in replaced.items() if key != "note"} == {"access_token": "xxxxxx", "csrfpToken": "x", "pinPassword": 9999}
+    assert replaced["note"] != "xxxxxx" and re.fullmatch(r"[a-z]{3}123", replaced["note"])
 
 
 def test_an_id_keeps_its_length_type_and_kinds_of_characters() -> None:
@@ -46,14 +49,18 @@ def test_a_name_keeps_the_length_and_capitals_of_each_word() -> None:
     assert "Alma" not in name and len(replaced["teacherInitials"]) == 2
 
 
-def test_a_name_learnt_is_replaced_in_every_text_but_a_word_in_lower_case() -> None:
+def test_every_word_of_every_text_is_replaced_the_same_wherever_it_is_keeping_its_shape() -> None:
     pseudonymiser = Pseudonymiser(KEY)
     pseudonymiser.learn({"name": "Alma og Bo"})
     name = pseudonymiser.value("Alma og Bo", "name")
     text = pseudonymiser.value("Hej Alma og Bo, Almas bog", "text")
+    note = pseudonymiser.value("Bo og Alma", "note")
     assert isinstance(name, str) and isinstance(text, str)
-    alma, _, bo = name.split()
-    assert text == f"Hej {alma} og {bo}, Almas bog"
+    alma, og, bo = name.split()
+    hej, _, _, _, almas, bog = text.replace(",", "").split()
+    assert text == f"{hej} {alma} {og} {bo}, {almas} {bog}" and note == f"{bo} {og} {alma}"
+    assert (alma, og, bo) != ("Alma", "og", "Bo") and len(almas) == 5 and almas[0].isupper() and bog.islower()
+    assert "Hej" not in text and "bog" not in text
 
 
 def test_contact_details_are_replaced_in_their_keys_and_in_texts() -> None:
@@ -71,11 +78,12 @@ def test_contact_details_are_replaced_in_their_keys_and_in_texts() -> None:
     assert replaced["email"] in text
 
 
-def test_dates_numbers_and_short_ids_in_a_text_are_kept() -> None:
+def test_dates_numbers_and_short_ids_in_a_text_are_kept_and_its_words_replaced() -> None:
     pseudonymiser = Pseudonymiser(KEY)
     pseudonymiser.learn({"id": 2026, "profileId": 2048194, "count": 12})
     assert pseudonymiser.value("2026-12-29T08:00:00+00:00", "start") == "2026-12-29T08:00:00+00:00"
-    assert pseudonymiser.value("Uge 2026, side 12", "text") == "Uge 2026, side 12"
+    week = pseudonymiser.value("Uge 2026, side 12", "text")
+    assert week != "Uge 2026, side 12" and re.fullmatch(r"[A-Z][a-z]{2} 2026, [a-z]{4} 12", week)
     assert pseudonymiser.value("Profil 2048194", "text") != "Profil 2048194"
     assert pseudonymiser.value({"count": 12, "share": 0.5, "none": None, "seen": True}) == {
         "count": 12,
@@ -90,17 +98,18 @@ def test_a_number_that_is_a_known_id_is_replaced_under_any_key() -> None:
     pseudonymiser.learn({"id": 3301846})
     replaced = pseudonymiser.value({"belongsToProfiles": [3301846, 7], "3301846": "child"})
     child = pseudonymiser.value(3301846, "id")
-    assert replaced == {"belongsToProfiles": [child, 7], str(child): "child"}
+    assert replaced == {"belongsToProfiles": [child, 7], str(child): pseudonymiser.value("child")}
 
 
-def test_a_link_keeps_its_site_and_query_names_its_query_values_replaced() -> None:
+def test_a_link_keeps_a_site_reserved_for_examples_and_its_query_names_and_has_the_rest_replaced() -> None:
     pseudonymiser = Pseudonymiser(KEY)
     pseudonymiser.learn({"id": 3301846})
     link = "https://files.example.org/3301846/foto.jpg?sig=Zm9v&exp=1&flag#top"
     replaced = pseudonymiser.value(link, "url")
     assert isinstance(replaced, str) and len(replaced) == len(link)
     assert replaced.startswith("https://files.example.org/") and replaced.endswith("&flag#top")
-    assert "3301846" not in replaced and "Zm9v" not in replaced and "/foto.jpg?sig=" in replaced
+    assert "3301846" not in replaced and "Zm9v" not in replaced and "foto" not in replaced
+    assert re.search(r"/[a-z]{4}\.[a-z]{3}\?sig=", replaced)
 
 
 def test_a_request_keeps_its_query_but_for_its_ids_and_secrets() -> None:
@@ -119,7 +128,9 @@ def test_exchanges_are_replaced_after_learning_from_all_of_them() -> None:
     ]
     first, second = pseudonymised(exchanges, KEY)
     alma: str = second["response"]["name"]
-    assert first == {
+    response: str = first["response"]
+    assert re.fullmatch(rf"{alma} [a-z]{{2}} [a-z]{{3}}", response) and response != f"{alma} er syg"
+    assert {**first, "response": None} == {
         "at": "2026-12-28T08:00:00+00:00",
         "endpoint": "a",
         "method": "GET",
@@ -128,7 +139,7 @@ def test_exchanges_are_replaced_after_learning_from_all_of_them() -> None:
         "status": 200,
         "headers": {},
         "error": None,
-        "response": f"{alma} er syg",
+        "response": None,
     }
     assert second["endpoint"] == "/widget" and second["request"] != {"childId": 3301846}
 
@@ -148,7 +159,7 @@ def test_shapes_name_the_types_at_each_place() -> None:
 def test_a_widget_s_filters_are_ids_however_short() -> None:
     pseudonymiser = Pseudonymiser(KEY)
     body = {"childFilter": ["pat"], "institutionFilter": ["S1"], "userProfile": "guardian"}
-    replaced: dict[str, Any] = pseudonymiser.value(body)
+    replaced: dict[str, Any] = pseudonymiser.value(body, words=False)
     assert replaced["childFilter"] != ["pat"] and len(replaced["childFilter"][0]) == 3
     assert replaced["institutionFilter"] != ["S1"] and replaced["userProfile"] == "guardian"
     url = pseudonymiser.url("https://widget.example/plans?childFilter[]=pat&institutionFilter[]=S1", request=True)
@@ -168,9 +179,10 @@ def test_a_token_becomes_as_many_x_wherever_it_stands() -> None:
     replaced: dict[str, Any] = _replaced(
         {"value": jwt, "note": f"Brug {jwt} nu", "header": "Bearer abc.DEF-123", "bearerToken": 42, "jwt": "abc"}
     )
+    assert re.fullmatch(rf"[A-Z][a-z]{{3}} {'x' * len(jwt)} [a-z]{{2}}", replaced["note"]) and not replaced["note"].startswith("Brug")
     assert replaced == {
         "value": "x" * len(jwt),
-        "note": f"Brug {'x' * len(jwt)} nu",
+        "note": replaced["note"],
         "header": "x" * len("Bearer abc.DEF-123"),
         "bearerToken": 99,
         "jwt": "xxx",
@@ -204,3 +216,42 @@ def test_hidden_keeps_each_value_s_type_and_length() -> None:
     from aula_connect.pseudonym import hidden
 
     assert hidden({"a": ["xy", 120, -7, 1.5, None, True]}) == {"a": ["xx", 999, -9, 1.5, None, True]}
+
+
+def test_html_keeps_its_tags_entities_style_and_class_and_has_the_words_of_its_text_and_titles_replaced() -> None:
+    html = '<p class="note" style="color:red" title="Til Alma">Hej&nbsp;Alma<br/></p>'
+    replaced: str = _replaced(html, "html")
+    assert re.fullmatch(r'<p class="note" style="color:red" title="[A-Z][a-z]{2} [A-Z][a-z]{3}">[A-Z][a-z]{2}&nbsp;[A-Z][a-z]{3}<br/></p>', replaced)
+    assert "Alma" not in replaced and "Hej" not in replaced
+
+
+def test_what_tells_how_an_answer_is_built_is_kept() -> None:
+    answer = {
+        "status": {"code": 0, "message": "OK"},
+        "messageType": "RecipientsRemoved",
+        "notificationArea": "Homework",
+        "role": "guardian",
+        "module": "presence",
+        "event": "NewMessagePrivateInbox",
+        "method": "presence.getDailyOverview",
+        "level": "PRESENCE_ADMIN",
+    }
+    assert _replaced(answer) == answer
+
+
+def test_who_someone_is_is_replaced_in_every_field_that_names_them_and_a_municipality_by_its_code() -> None:
+    answer = {"leaverNames": ["Clara", "Oscar"], "metadata": "Benjamin 2A", "municipalityCode": "791", "gender": "Female"}
+    replaced: dict[str, Any] = _replaced(answer)
+    assert all(name not in json.dumps(replaced) for name in ("Clara", "Oscar", "Benjamin", "791", "Female"))
+    assert re.fullmatch(r"[A-Z][a-z]{7} 2[A-Z]", replaced["metadata"]) and len(replaced["municipalityCode"]) == 3
+
+
+def test_a_link_has_its_path_replaced_and_its_site_unless_aula_s_and_a_request_keeps_its_path() -> None:
+    pseudonymiser = Pseudonymiser(KEY)
+    other = pseudonymiser.value("https://www.viborg.dk/skoler/alma?x=1", "url")
+    aula = pseudonymiser.value("https://media-prod.aula.dk/profile-pictures/x.jpg", "url")
+    assert re.fullmatch(r"https://[a-z]{3}\.[a-z]{6}\.dk/[a-z]{6}/[a-z]{4}\?x=\d", other) and "viborg" not in other
+    assert re.fullmatch(r"https://media-prod\.aula\.dk/[a-z]{7}-[a-z]{8}/[a-z]\.[a-z]{3}", aula)
+    assert "profile" not in aula
+    request = pseudonymiser.url("https://www.aula.dk/api/v25/profiles?method=profiles.getProfileContext", request=True)
+    assert request == "https://www.aula.dk/api/v25/profiles?method=profiles.getProfileContext"

@@ -239,11 +239,11 @@ def test_a_value_is_replaced_by_the_same_one_wherever_it_is() -> None:
     assert event["belongsToProfiles"] == [child["id"]]
     assert birthday["institutionProfileId"] == child["id"]
     assert birthday["name"] == child["name"]
-    assert thread["subject"] == f"Tur for {first}"
-    assert f"Hej {first}," in thread["latestMessage"]["text"]["html"]
+    assert re.fullmatch(rf"[A-Z][a-z]{{2}} [a-z]{{3}} {first}", thread["subject"])
+    assert re.search(rf"[A-Z][a-z]{{2}} {first},", thread["latestMessage"]["text"]["html"])
     urls = [exchange["url"] for exchange in export["exchanges"] if exchange["endpoint"] == "messaging.getMessagesForThread"]
     assert any(f"threadId={thread['id']}&" in url for url in urls)
-    assert event["title"] == "Dansk"
+    assert event["title"] != "Dansk" and re.fullmatch(r"[A-Z][a-z]{4}", event["title"])
     assert event["startDateTime"] == "2026-12-29T08:00:00+00:00"
 
 

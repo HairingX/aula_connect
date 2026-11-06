@@ -47,23 +47,30 @@ answers = client.responses(key)  # key: bytes kept secret, the same each time
 ```
 
 `answers` holds Aula's API version, each request with its answer, and the type at each place of
-each kind of answer, to see where Aula has changed. Every value that tells who someone is gets
-another of the same length and kinds of characters, the same one wherever it is and for as long as
-the key is the same, so that what belongs together still does:
+each kind of answer, to see where Aula has changed. All the answers say is replaced, but how they
+are built, so that they can be shared in public: every value gets another of the same length and
+kinds of characters, the same one wherever it is and for as long as the key is the same, so that
+what belongs together still does.
 
-- ids, under their keys and inside texts and links, and numbers that are known ids;
-- names, word by word, under their keys and, written with a capital, inside every text;
-- e-mail addresses, phone numbers and CPR numbers anywhere, and addresses under their keys;
-- the query of every link, as it can sign it.
+- Every word of every text, word by word, with capitals where it has them: names, messages,
+  titles, notes and the rest.
+- Ids, under their keys - an institution's and a municipality's code among them - and inside texts
+  and links, and numbers that are known ids.
+- E-mail addresses, phone numbers and CPR numbers anywhere, and addresses under their keys.
+- The site of every link but Aula's and its widgets', the words of its path, and its query, as it
+  can sign the link.
+
+Kept is what tells how an answer is built: the keys; the values of a kind Aula names, such as a
+message's type, a notification's area, a role or a status; names in code such as
+`NewMessagePrivateInbox`; HTML's tags; dates and times; and numbers that are no ids. The path and
+query of a request the client sends are kept but for their ids.
 
 The MitID username and every token the client holds are hidden wherever they stand, as is what
 a request for a token answers, and any value under a key of a secret, a cookie among them, or that
 looks like a token: a text becomes as many "x", a number as many 9s.
 
-Dates, times, other numbers and the rest of each text are kept. A name Aula gives under no key of
-a name, such as another child's in a message, is kept with them, so the answers are still personal
-data: share them only with who needs them. The messages of every thread on the newest page are
-read, but not those of a thread Aula marks sensitive, which the client never reads.
+The messages of every thread on the newest page are read, but not those of a thread Aula marks
+sensitive, which the client never reads.
 
 `client.anomalies(since=None)` names what Aula sent that the client does not know or could not
 read, each `Anomaly` once with its `kind`, its `detail` and when it was `last_seen`, the latest
