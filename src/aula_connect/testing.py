@@ -320,7 +320,7 @@ class SimulatedAulaApi:
     at it.
     """
 
-    VERSION = 23
+    VERSION = 25
 
     def __init__(
         self, access_token: str = "access", network: Network | None = None, login: SimulatedAulaLogin | None = None

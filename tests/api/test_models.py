@@ -187,6 +187,14 @@ def test_a_message_is_read_with_its_sender_and_text() -> None:
     assert parsed.text is not None and parsed.text.html == "<p>Hi</p>"
 
 
+def test_aula_s_own_messages_without_a_sender_are_left_out_and_the_thread_read() -> None:
+    message = {"id": "m1", "messageType": "Message", "sendDateTime": "2027-01-05T08:00:00+00:00", "sender": CONTACT}
+    removed = {"id": "m2", "messageType": "RecipientsRemoved", "sendDateTime": "2027-01-05T09:00:00+00:00", "sender": None, "leaverNames": ["Bo"]}
+    deleted = {"id": "m3", "messageType": "MessageDeleted", "sendDateTime": "2027-01-05T10:00:00+00:00", "sender": None, "deletedAt": "2027-01-05T10:00:00+00:00"}
+    parsed = AulaMessageThreadParser.parse_messages_response(cast(Any, {"data": {"messages": [message, removed, deleted]}}))
+    assert [message.id for message in parsed] == ["m1"]
+
+
 def test_the_children_a_thread_regards_are_read() -> None:
     children = AulaMessageThreadParser.parse_message_thread_regarding_children(
         cast(Any, [{"displayName": "Alma Example", "profileId": 101, "shortName": "AE"}])
