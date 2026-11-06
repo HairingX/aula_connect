@@ -548,6 +548,8 @@ class AulaProxyClient:
         missing = set(child.id for child in children if child.id not in present)
         if missing - self._children_without_presence:
             _LOGGER.warning("Unable to retrieve presence data from Aula for a child. Some data will be missing from sensor entities.")
+        if self._children_without_presence - missing:
+            _LOGGER.info("Aula gives presence data for a child again")
         self._children_without_presence = missing
         _LOGGER.debug("Fetched daily overviews: %s", len(daily_overviews))
         return daily_overviews

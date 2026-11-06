@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, time, timezone
 from typing import Any
@@ -76,7 +77,7 @@ def test_the_daily_overview_says_who_is_checked_in(caplog: pytest.LogCaptureFixt
     assert "Unable to retrieve presence" not in caplog.text
 
 
-def test_a_child_with_no_presence_is_logged_once_and_again_after_it_had_one(caplog: pytest.LogCaptureFixture) -> None:
+def test_a_child_with_no_presence_is_logged_once_until_it_has_one_and_when_it_has(caplog: pytest.LogCaptureFixture) -> None:
     overview: dict[str, object] = {"id": 1, "institutionProfile": {"id": 11, "institutionCode": "S1", "institutionName": "School"}, "status": 3}
 
     async def act(aula: SimulatedAulaApi, client: AulaProxyClient) -> None:
@@ -92,8 +93,10 @@ def test_a_child_with_no_presence_is_logged_once_and_again_after_it_had_one(capl
             await client.login()
             await act(aula, client)
 
-    asyncio.run(run())
+    with caplog.at_level(logging.INFO):
+        asyncio.run(run())
     assert caplog.text.count("Unable to retrieve presence") == 2
+    assert caplog.text.count("Aula gives presence data for a child again") == 1
 
 
 def test_the_calendar_is_read_with_the_csrf_token() -> None:
