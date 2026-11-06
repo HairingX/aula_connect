@@ -189,7 +189,7 @@ class AulaClient:
         start_datetime: datetime.datetime,
         end_datetime: datetime.datetime,
     ) -> List[AulaBirthdayEvent]:
-        """The birthdays at the children's institutions in the period."""
+        """The birthdays in the period that Aula ties to one of the children, or to none."""
         await self._ensure_valid_token()
         return await self._proxy.get_birthday_events(profiles, start_datetime, end_datetime)
 

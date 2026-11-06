@@ -500,7 +500,7 @@ class AulaProxyClient:
             raise ParseError(f"Aula's answer of {what} could not be read ({type(e).__name__})") from None
 
     async def get_birthday_events(self, profiles: List[AulaChildProfile], start_datetime: datetime, end_datetime: datetime) -> List[AulaBirthdayEvent]:
-        """The birthdays at the children's institutions from `start_datetime` to `end_datetime`."""
+        """The birthdays from `start_datetime` to `end_datetime` that Aula ties to one of the children, or to none."""
         if len(profiles) == 0: return []
         inst_profile_codes = list(set(profile.institution_code for profile in profiles))
         start = start_datetime.strftime("%Y-%m-%dT00:00:00.0000%:z").replace("+", "%2B")
@@ -510,6 +510,9 @@ class AulaProxyClient:
         data = await self._read(api_method, "birthday events", lambda: self._session.get(requesturl))
         if data is None: return []
         events = self._parse("birthday events", AulaBirthdayParser.parse_birthday_event_response, data)
+        # Aula answers for the whole institution: a classmate of one child is no birthday of another's.
+        ids = {profile.id for profile in profiles}
+        events = [event for event in events if not event.related_children_ids or ids.intersection(event.related_children_ids)]
         _LOGGER.debug("Fetched birthday events: %s", len(events))
         return events
 

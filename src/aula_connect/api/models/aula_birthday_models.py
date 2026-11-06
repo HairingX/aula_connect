@@ -1,6 +1,6 @@
 """The birthdays at an institution."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 @dataclass
@@ -12,3 +12,5 @@ class AulaBirthdayEvent:
     full_name: str
     main_group_name: str
     """Group this child mainly belongs to. E.g. "0A"."""
+    related_children_ids: list[int] = field(default_factory=list[int])
+    """The ids of the logged-in user's children the birthday concerns, such as a classmate's."""
