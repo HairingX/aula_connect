@@ -1,11 +1,14 @@
-"""Aula's answers with what tells who someone is replaced: each value always by the same other
-value of its length, so that what belongs together still does, and the text still fills as much.
+"""Aula's answers with all they say replaced, but how they are built: each value always by the
+same other value of its length, so that what belongs together still does, and the text still
+fills as much.
 
-Ids, names, contact details and links are found by the keys Aula gives them under; a name, an
-id or a contact detail found so is replaced inside every text too. Secrets become as many "x".
-A token, whatever key it is under or text it is in, becomes as many "x" too.
-Dates and times, numbers that are no ids, and the rest of a text are kept as they are: a name
-the answers give under no key of a name, such as another child's in a message, stays.
+Every word of every text is replaced by a made-up word as long, with capitals where it has them;
+the same word always by the same one. Ids and contact details, found by their keys or their form,
+are replaced by others of their kinds of characters, inside every text too, and so is the site of
+a link but for Aula's and its widgets'. Secrets and tokens become as many "x".
+What tells how an answer is built is kept: the keys, the values of a kind such as a message's
+type or a notification's area, names in code such as "NewMessagePrivateInbox", HTML's tags,
+dates and times, and numbers that are no ids.
 """
 
 from __future__ import annotations
@@ -26,6 +29,17 @@ _SECRET = re.compile(r"token|password|secret|csrf|cookie|signature|authorization
 # A token Aula or a widget gives, wherever it stands: a JSON web token, or one sent as a bearer.
 _TOKEN = r"eyJ[\w-]+\.[\w-]+\.[\w-]*|(?i:bearer)\s+[\w.~+/=-]+"
 _ID_KEYS = {"id", "ids", "institutioncode", "unilogin", "userid", "key", "bucket"}
+# Keys whose values are of a kind Aula names, never who someone is or what they wrote.
+_KIND_KEYS = ("type", "status", "role", "mode", "area", "module", "method", "scope", "placement", "supplier", "version")
+_KIND_NAMES = {"icon", "iconemployee", "iconhover", "pluginname"}
+# A value that is a name in code: "NewMessagePrivateInbox", "presence.getDailyOverview", "ADMIN_ROLE".
+_CODE = re.compile(r"[a-z]+(?:[A-Z][a-z0-9]{2,})+|(?:[A-Z][a-z0-9]{2,}){2,}|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+|[a-z]+\.[a-z]+[A-Za-z]*")
+# The sites of Aula, of its widgets, and the names reserved for examples, kept in a link.
+_KEPT_SITES = re.compile(
+    r"(?:.+\.)?(?:aula\.dk|minuddannelse\.net|meebook\.com|systematic-momo\.dk|easyiqcloud\.dk"
+    r"|example\.(?:com|org|net)|[^.]+\.(?:example|invalid|test))",
+    re.IGNORECASE,
+)
 # Keys whose text is who someone is, besides those ending in "name": the one who fetches a child,
 # the author of a task, the institution a notification is from.
 _NAME_KEYS = {
@@ -58,8 +72,14 @@ shorter one could be a count or a status."""
 
 
 def _is_id_key(key: str) -> bool:
-    # A widget is asked for its children and institutions by their ids, as a filter.
-    return key.lower() in _ID_KEYS or key.endswith(("Id", "Ids", "ID", "_id", "Filter"))
+    # A widget is asked for its children and institutions by their ids, as a filter; an
+    # institution and a municipality are named by a code.
+    return key.lower() in _ID_KEYS or key.endswith(("Id", "Ids", "ID", "_id", "Filter", "Code", "Codes"))
+
+
+def _is_kind_key(key: str) -> bool:
+    lower = key.lower()
+    return lower.endswith(_KIND_KEYS) or lower in _KIND_NAMES
 
 
 def _hidden(value: str) -> str:
@@ -193,35 +213,68 @@ class Pseudonymiser:
             elif _CONTACT.search(key) and isinstance(value, str) and value.strip():
                 self._in_text[value] = self._contact
 
-    def text(self, value: str) -> str:
-        """A text with the ids, names, contact details and links learnt, and any contact detail or
-        link it holds, replaced; a date or a time alone is kept."""
+    def text(self, value: str, words: bool = True) -> str:
+        """A text with every word, and the ids, contact details and links learnt or found in it,
+        replaced; HTML's tags, and a date or a time alone, are kept.
+
+        Without `words`, the words are kept, for a text of the library's or of HTTP's own, such as
+        an error or an API's path, which says nothing of anyone but by the ids in it.
+        """
         if _DATE.fullmatch(value):
             return value
         if self._pattern is None:
             known = "|".join(re.escape(text) for text in sorted(self._in_text, key=len, reverse=True))
-            alternatives = [f"(?P<token>{_TOKEN})", f"(?P<link>{_LINK})"]
+            alternatives = [f"(?P<token>{_TOKEN})", f"(?P<link>{_LINK})", r"(?P<tag><[^<>]*>)", r"(?P<entity>&#?\w+;)"]
             alternatives += [f"(?P<known>(?<!\\w)(?:{known})(?!\\w))"] if known else []
-            alternatives += [f"(?P<email>{_EMAIL})", f"(?P<cpr>{_CPR})", f"(?P<phone>{_PHONE})"]
+            alternatives += [f"(?P<email>{_EMAIL})", f"(?P<cpr>{_CPR})", f"(?P<phone>{_PHONE})", r"(?P<word>[^\W\d_]+)"]
             self._pattern = re.compile("|".join(alternatives))
 
         def replace(match: re.Match[str]) -> str:
             text = match.group()
-            if match.lastgroup == "token":
-                return _hidden(text)
-            if match.lastgroup == "link":
-                return self.url(text)
-            if match.lastgroup == "known":
-                return self._in_text[text](text)
-            return self._contact(text)
+            match match.lastgroup:
+                case "token":
+                    return _hidden(text)
+                case "link":
+                    return self.url(text)
+                case "tag":
+                    return self._tag(text)
+                case "entity":
+                    return text
+                case "known":
+                    return self._in_text[text](text)
+                case "word":
+                    return self._word(text) if words else text
+                case _:
+                    return self._contact(text)
 
         return self._pattern.sub(replace, value)
 
-    def url(self, value: str, request: bool = False) -> str:
-        """A link with the ids, names and contact details in its path replaced, each in its place.
+    def _tag(self, tag: str) -> str:
+        """An HTML tag with the text of its attributes replaced, but for its style and class."""
 
-        The values of a request's query are kept but for its ids; every value of another link's
-        query is replaced, as it can sign the link.
+        def attribute(match: re.Match[str]) -> str:
+            name, quote, text = match.group(1), match.group(2), match.group(3)
+            kept = name.lower() in ("style", "class")
+            return f"{name}={quote}{text if kept else self.text(text)}{quote}"
+
+        return re.sub(r"([\w-]+)=([\"'])(.*?)\2", attribute, tag)
+
+    def _site(self, site: str) -> str:
+        """The site of a link with each part of its host but the last replaced, unless it is Aula's,
+        a widget's, or one reserved for examples."""
+        parts = re.fullmatch(r"(?P<scheme>[a-z]+://)(?P<host>[^/:]*)(?P<port>:\d+)?", site, re.IGNORECASE)
+        if parts is None or _KEPT_SITES.fullmatch(parts.group("host")):
+            return site
+        *labels, last = parts.group("host").split(".")
+        host = ".".join([*(self._word(label) for label in labels), last])
+        return f"{parts.group('scheme')}{host}{parts.group('port') or ''}"
+
+    def url(self, value: str, request: bool = False) -> str:
+        """A link with its site, unless it is Aula's or a widget's, and the words, ids and contact
+        details of its path replaced, each in its place.
+
+        The path and the values of a request's query are kept but for their ids; every value of
+        another link's query is replaced, as it can sign the link.
         """
         parts = _LINK_PARTS.fullmatch(value)
         assert parts is not None
@@ -234,21 +287,29 @@ class Pseudonymiser:
             elif request and _is_id_key(plain):
                 item = self._id(item)
             elif request:
-                item = self.text(item)
+                item = self.text(item, words=False)
             else:
                 item = self._shaped("query", item)
             return f"{name}{match.group(2)}{item}"
 
         query = re.sub(r"([^&=]+)(=?)([^&]*)", param, parts.group("query") or "")
-        return f"{parts.group('site')}{self.text(parts.group('path'))}{query}{parts.group('rest') or ''}"
+        site = self._site(parts.group("site"))
+        path = re.sub(r"[^/]+", lambda segment: self.text(segment.group(), not request), parts.group("path"))
+        return f"{site}{path}{query}{parts.group('rest') or ''}"
 
-    def value(self, value: Any, key: str = "") -> Any:
-        """`value`, found under `key`, with what tells who someone is replaced."""
+    def value(self, value: Any, key: str = "", words: bool = True) -> Any:
+        """`value`, found under `key`, with what tells who someone is replaced.
+
+        Without `words`, the words of a text that is no name are kept, for what the library itself
+        sends, such as a request's body.
+        """
+        if key == "status" or (_is_kind_key(key) and isinstance(value, str)):
+            return value
         if isinstance(value, dict):
             mapping = cast(dict[object, Any], value)
-            return {self._dict_key(str(name)): self.value(item, str(name)) for name, item in mapping.items()}
+            return {self._dict_key(str(name)): self.value(item, str(name), words) for name, item in mapping.items()}
         if isinstance(value, list):
-            return [self.value(item, key) for item in cast(list[Any], value)]
+            return [self.value(item, key, words) for item in cast(list[Any], value)]
         if isinstance(value, bool) or not isinstance(value, str | int):
             return value
         if _SECRET.search(key):
@@ -259,13 +320,15 @@ class Pseudonymiser:
             return int(self._id(text)) if _is_id_key(key) or known else value
         if _is_id_key(key):
             return self._id(value)
+        if _CODE.fullmatch(value):
+            return value
         if _is_name_key(key):
             return self._name(value)
         if _CONTACT.search(key):
             return self._contact(value) if value.strip() else value
         if _URL.match(value):
             return self.url(value)
-        return self.text(value)
+        return self.text(value, words)
 
     def _dict_key(self, name: str) -> str:
         return self._id(name) if name.isdigit() else name
@@ -302,13 +365,16 @@ def pseudonymised(exchanges: Iterable[Exchange], key: bytes, secrets: Iterable[s
     return [
         {
             "at": exchange.at.isoformat(),
-            "endpoint": pseudonymiser.text(exchange.endpoint),
+            "endpoint": pseudonymiser.text(exchange.endpoint, words=False),
             "method": exchange.method,
             "url": pseudonymiser.url(exchange.url, request=True),
-            "request": pseudonymiser.value(exchange.request),
+            "request": pseudonymiser.value(exchange.request, words=False),
             "status": exchange.status,
-            "headers": pseudonymiser.value(exchange.headers),
-            "error": None if exchange.error is None else pseudonymiser.text(exchange.error),
+            "headers": {
+                name: hidden(text) if _SECRET.search(name) else pseudonymiser.text(text, words=False)
+                for name, text in exchange.headers.items()
+            },
+            "error": None if exchange.error is None else pseudonymiser.text(exchange.error, words=False),
             "response": _answer(pseudonymiser, exchange),
         }
         for exchange in kept
