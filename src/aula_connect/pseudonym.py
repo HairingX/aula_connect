@@ -16,7 +16,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Collection, Iterable
 from typing import Any, cast
 from urllib.parse import unquote
 
@@ -116,9 +116,16 @@ class Pseudonymiser:
     `learn` everything first, then replace it: a name learnt from one answer is replaced in all.
     """
 
-    def __init__(self, key: bytes, secrets: Iterable[str] = ()) -> None:
-        """Replace with `key`, and every one of `secrets` anywhere by as many "x"."""
+    def __init__(self, key: bytes, secrets: Iterable[str] = (), reveal: bool | Collection[str] = False) -> None:
+        """Replace with `key`, and every one of `secrets` anywhere by as many "x".
+
+        `reveal` keeps the values under the keys it names as they are, or every value where it is
+        True; a secret and a token are hidden all the same.
+        """
         self._key = key
+        self._reveal_all = reveal is True
+        self._revealed = frozenset(reveal) if not isinstance(reveal, bool) else frozenset[str]()
+        self._secrets = [secret for secret in secrets if secret]
         self._ids: dict[str, str] = {}
         self._known_ids: set[str] = set()
         self._taken: set[str] = set()
@@ -303,6 +310,8 @@ class Pseudonymiser:
         Without `words`, the words of a text that is no name are kept, for what the library itself
         sends, such as a request's body.
         """
+        if self._reveal_all or key in self._revealed:
+            return self._bare(value, key)
         if key == "status" or (_is_kind_key(key) and isinstance(value, str)):
             return value
         if isinstance(value, dict):
@@ -330,6 +339,20 @@ class Pseudonymiser:
             return self.url(value)
         return self.text(value, words)
 
+    def _bare(self, value: Any, key: str) -> Any:
+        """`value` as it is, but for its secrets and tokens, as many "x"."""
+        if _SECRET.search(key):
+            return hidden(value)
+        if isinstance(value, dict):
+            return {name: self._bare(item, str(name)) for name, item in cast(dict[object, Any], value).items()}
+        if isinstance(value, list):
+            return [self._bare(item, key) for item in cast(list[Any], value)]
+        if isinstance(value, str):
+            secrets = "|".join(re.escape(secret) for secret in sorted(self._secrets, key=len, reverse=True))
+            pattern = f"{_TOKEN}|{secrets}" if secrets else _TOKEN
+            return re.sub(pattern, lambda match: _hidden(match.group()), value)
+        return value
+
     def _dict_key(self, name: str) -> str:
         return self._id(name) if name.isdigit() else name
 
@@ -354,11 +377,17 @@ def shapes(value: Any, path: str = "") -> dict[str, list[str]]:
     return {at: sorted(kinds) for at, kinds in sorted(found.items())}
 
 
-def pseudonymised(exchanges: Iterable[Exchange], key: bytes, secrets: Iterable[str] = ()) -> list[dict[str, Any]]:
+def pseudonymised(
+    exchanges: Iterable[Exchange], key: bytes, secrets: Iterable[str] = (), reveal: bool | Collection[str] = False
+) -> list[dict[str, Any]]:
     """The exchanges, each with what tells who someone is replaced, one key making the same, and
-    each of `secrets` hidden wherever it is. What a request for a token answers is hidden whole."""
+    each of `secrets` hidden wherever it is. What a request for a token answers is hidden whole.
+
+    `reveal` keeps what the request sent and Aula answered under the keys it names, or all of it
+    where it is True, as it is but for its secrets and tokens.
+    """
     kept = list(exchanges)
-    pseudonymiser = Pseudonymiser(key, secrets)
+    pseudonymiser = Pseudonymiser(key, secrets, reveal)
     for exchange in kept:
         pseudonymiser.learn(exchange.request)
         pseudonymiser.learn(exchange.response)

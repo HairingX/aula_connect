@@ -255,3 +255,20 @@ def test_a_link_has_its_path_replaced_and_its_site_unless_aula_s_and_a_request_k
     assert "profile" not in aula
     request = pseudonymiser.url("https://www.aula.dk/api/v25/profiles?method=profiles.getProfileContext", request=True)
     assert request == "https://www.aula.dk/api/v25/profiles?method=profiles.getProfileContext"
+
+
+def test_reveal_keeps_the_values_under_the_keys_it_names_but_hides_secrets_and_tokens() -> None:
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl"
+    answer = {"widgetCategory": {"label": "Ny ting", "note": f"af parent-user med {jwt}"}, "name": "Alma", "token": "abc"}
+    pseudonymiser = Pseudonymiser(KEY, ["parent-user"], reveal=["widgetCategory"])
+    pseudonymiser.learn(answer)
+    replaced: dict[str, Any] = pseudonymiser.value(answer)
+    assert replaced["widgetCategory"] == {"label": "Ny ting", "note": f"af {'x' * 11} med {'x' * len(jwt)}"}
+    assert replaced["name"] != "Alma" and replaced["token"] == "xxx"
+
+
+def test_reveal_all_keeps_every_value_but_secrets_and_tokens() -> None:
+    answer = {"name": "Alma", "id": 3301846, "items": ["Hej parent-user"], "accessToken": "abc"}
+    pseudonymiser = Pseudonymiser(KEY, ["parent-user"], reveal=True)
+    pseudonymiser.learn(answer)
+    assert pseudonymiser.value(answer) == {"name": "Alma", "id": 3301846, "items": [f"Hej {'x' * 11}"], "accessToken": "xxx"}

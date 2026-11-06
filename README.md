@@ -80,8 +80,11 @@ so a caller can show them and ask for the answers when Aula changes; `since`, a 
 leaves out what was not met again since. A later minor version may add a kind, never rename or
 remove one, so a caller handles a kind it does not know.
 
-`client.read(method, params, key)` asks one method of Aula's API that only gets, named
-`<area>.get<What>`, and gives its answer as `responses` gives one. It raises `MethodRefusedError`
+`client.read(method, params, key, reveal=False)` asks one method of Aula's API that only gets,
+named `<area>.get<What>`, and gives its answer as `responses` gives one. `reveal` keeps the values
+under the keys it names as Aula sent them, such as `["widgetCategory"]` to see a field of a module
+not known yet, or the whole answer with `True`; the MitID username and every token are hidden all
+the same. What is revealed is no longer anonymous: share it only in private. It raises `MethodRefusedError`
 for any other method, for the messages of a thread or a secure document, and for `params` that
 name a method or a token.
 
