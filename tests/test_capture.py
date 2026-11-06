@@ -183,13 +183,11 @@ def _same_shape(original: Any, replaced: Any) -> None:
         assert len(str(replaced)) == len(str(original)), (original, replaced)
 
 
-def test_reading_everything_reads_each_kind_once_the_birthdays_of_the_year_too_and_no_sensitive_thread() -> None:
+def test_reading_everything_reads_each_kind_once_the_next_birthday_too_and_no_sensitive_thread() -> None:
     failed, _, client, aula = _read_everything()
     assert failed == []
     birthdays = [exchange.url for exchange in client.api.recorder.exchanges() if "getBirthdayEvents" in exchange.url]
-    assert any(f"end={(START + timedelta(days=366)):%Y-%m-%d}" in url for url in birthdays)
-    assert any(f"start={(START + timedelta(days=28)):%Y-%m-%d}" in url for url in birthdays)
-    assert not any(f"start={START:%Y-%m-%d}" in url and f"end={(START + timedelta(days=366)):%Y-%m-%d}" in url for url in birthdays)
+    assert any(f"start={START:%Y-%m-%d}" in url and f"end={(START + timedelta(days=28)):%Y-%m-%d}" in url for url in birthdays)
     assert aula.requests == [
         "profiles.getProfilesByLogin",
         "profiles.getProfileContext",
@@ -202,7 +200,7 @@ def test_reading_everything_reads_each_kind_once_the_birthdays_of_the_year_too_a
         "notifications.getNotificationsForActiveProfile",
         "calendar.getEventsByProfileIdsAndResourceIds",
         "calendar.getBirthdayEventsForInstitutions",
-        *["calendar.getBirthdayEventsForInstitutions"] * 14,
+        "calendar.getBirthdayEventsForInstitutions",
         "aulaToken.getAulaToken",
         "meebook",
         "aulaToken.getAulaToken",
@@ -585,3 +583,23 @@ def test_anomalies_since_the_moment_one_was_last_met_include_it() -> None:
         return client.anomalies(since=anomaly.last_seen)
 
     assert len(_client_run(act)) == 1
+
+
+@pytest.mark.parametrize(("found_in", "asked"), [(3, 3), (None, 15)])
+def test_reading_everything_looks_for_the_next_birthday_four_weeks_at_a_time_a_year_at_most(found_in: int | None, asked: int) -> None:
+    """The first request is the birthdays from start to end; the rest look for the next one."""
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> int:
+        _account(aula)
+        periods = 0
+
+        async def birthdays(request: web.Request) -> web.Response:
+            nonlocal periods
+            periods += 1
+            found = [{"institutionProfileId": 3301846, "birthday": "2017-12-01", "institutionCode": "280917", "name": "Alma"}]
+            return web.json_response({"status": {"code": 0, "message": "OK"}, "data": found if periods == found_in else [], "version": 25})
+
+        aula.answers["calendar.getBirthdayEventsForInstitutions"] = birthdays
+        await client.read_everything(START, END)
+        return periods
+
+    assert _client_run(act) == asked
