@@ -196,6 +196,7 @@ class AulaProxyClient:
         # One widget token fetch, and one recovery, at a time: reads at once would otherwise
         # each fetch the same token, or each reset the session under the others.
         self._token_refresh_lock = asyncio.Lock()
+        self._children_without_presence: set[int] = set()
 
     def _note(self, kind: AnomalyKind, detail: str) -> None:
         self._anomalies[(kind, detail)] = datetime.now(timezone.utc)
@@ -543,10 +544,11 @@ class AulaProxyClient:
         data = await self._read(api_method, "daily overviews", lambda: self._session.get(requesturl))
         if data is None: return []
         daily_overviews = self._parse("daily overviews", AulaProfileParser.parse_daily_overview_response, data)
-        overview_ids = set(overview.id for overview in daily_overviews)
-        for child in children:
-            if child.id not in overview_ids:
-                _LOGGER.warning("Unable to retrieve presence data from Aula for a child. Some data will be missing from sensor entities.")
+        present = set(overview.institution_profile.id for overview in daily_overviews)
+        missing = set(child.id for child in children if child.id not in present)
+        if missing - self._children_without_presence:
+            _LOGGER.warning("Unable to retrieve presence data from Aula for a child. Some data will be missing from sensor entities.")
+        self._children_without_presence = missing
         _LOGGER.debug("Fetched daily overviews: %s", len(daily_overviews))
         return daily_overviews
 

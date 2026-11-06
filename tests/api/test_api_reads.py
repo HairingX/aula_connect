@@ -55,7 +55,7 @@ def test_a_token_aula_refuses_asks_for_a_new_login() -> None:
         asyncio.run(run())
 
 
-def test_the_daily_overview_says_who_is_checked_in() -> None:
+def test_the_daily_overview_says_who_is_checked_in(caplog: pytest.LogCaptureFixture) -> None:
     def arrange(aula: SimulatedAulaApi) -> None:
         aula.daily_overviews = [
             {
@@ -73,6 +73,27 @@ def test_the_daily_overview_says_who_is_checked_in() -> None:
 
     [overview], _ = _read(arrange, act)
     assert (overview.status, overview.check_in_time, overview.exit_with) == (3, time(8, 5), "Grandma")
+    assert "Unable to retrieve presence" not in caplog.text
+
+
+def test_a_child_with_no_presence_is_logged_once_and_again_after_it_had_one(caplog: pytest.LogCaptureFixture) -> None:
+    overview: dict[str, object] = {"id": 1, "institutionProfile": {"id": 11, "institutionCode": "S1", "institutionName": "School"}, "status": 3}
+
+    async def act(aula: SimulatedAulaApi, client: AulaProxyClient) -> None:
+        assert client._login_result is not None
+        nothing: list[dict[str, object]] = []
+        for overviews in (nothing, nothing, [overview], nothing):
+            aula.daily_overviews = overviews
+            await client.get_daily_overviews(client._login_result.profiles)
+
+    async def run() -> None:
+        async with SimulatedAulaApi() as aula, aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as session:
+            client = aula.point(AulaProxyClient(session, aula.access_token))
+            await client.login()
+            await act(aula, client)
+
+    asyncio.run(run())
+    assert caplog.text.count("Unable to retrieve presence") == 2
 
 
 def test_the_calendar_is_read_with_the_csrf_token() -> None:
