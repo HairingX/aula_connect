@@ -1,7 +1,7 @@
 """Where Aula's API and its widgets' are, and the API version expected."""
 
 API = "https://www.aula.dk/api/v"
-API_VERSION = "23"
+API_VERSION = "25"
 MIN_UDDANNELSE_API = "https://api.minuddannelse.net/aula"
 MEEBOOK_API = "https://app.meebook.com/aulaapi"
 SYSTEMATIC_API = "https://systematic-momo.dk/api/aula"

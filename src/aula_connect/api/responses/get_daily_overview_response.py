@@ -6,7 +6,7 @@ from .common_data import AulaStatusData
 
 class AulaDailyOverviewInstitutionProfileData(TypedDict):
     """The child's institution profile."""
-    id: NotRequired[str|None]
+    id: NotRequired[int|None]
     institutionCode: NotRequired[str|None]
     institutionName: NotRequired[str|None]
     metadata: NotRequired[str|None]
@@ -24,14 +24,14 @@ class AulaDailyOverviewLocationData(TypedDict):
 
 class AulaDailyOverviewData(TypedDict):
     """A child's presence today."""
-    activityType: NotRequired[str|None]
+    activityType: NotRequired[int|None]
     checkInTime: NotRequired[str|None]
     checkOutTime: NotRequired[str|None]
     comment: NotRequired[str|None]
     entryTime: NotRequired[str|None]
     exitTime: NotRequired[str|None]
     exitWith: NotRequired[str|None]
-    id: NotRequired[str|None]
+    id: NotRequired[int|None]
     institutionProfile: NotRequired[AulaDailyOverviewInstitutionProfileData|None]
     isDefaultEntryTime: NotRequired[bool|None]
     isDefaultExitTime: NotRequired[bool|None]
@@ -39,11 +39,11 @@ class AulaDailyOverviewData(TypedDict):
     location: NotRequired[AulaDailyOverviewLocationData|None]
     sleepIntervals: NotRequired[List[str]|None]
     spareTimeActivity: NotRequired[str|None]
-    status: NotRequired[str|None]
+    status: NotRequired[int|None]
 
 
 class AulaGetDailyOverviewResponse(TypedDict):
     """The answer, with the children's presence."""
     data: List[AulaDailyOverviewData]
     status: AulaStatusData
-    version: str
+    version: int

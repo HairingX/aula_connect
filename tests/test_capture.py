@@ -7,7 +7,7 @@ import asyncio
 import json
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
@@ -183,9 +183,11 @@ def _same_shape(original: Any, replaced: Any) -> None:
         assert len(str(replaced)) == len(str(original)), (original, replaced)
 
 
-def test_reading_everything_reads_each_kind_once_and_no_sensitive_thread() -> None:
-    failed, _, _, aula = _read_everything()
+def test_reading_everything_reads_each_kind_once_the_birthdays_of_the_year_too_and_no_sensitive_thread() -> None:
+    failed, _, client, aula = _read_everything()
     assert failed == []
+    birthdays = [exchange.url for exchange in client.api.recorder.exchanges() if "getBirthdayEvents" in exchange.url]
+    assert any(f"end={(START + timedelta(days=366)):%Y-%m-%d}" in url for url in birthdays)
     assert aula.requests == [
         "profiles.getProfilesByLogin",
         "profiles.getProfileContext",
@@ -197,6 +199,7 @@ def test_reading_everything_reads_each_kind_once_and_no_sensitive_thread() -> No
         "messaging.getMessagesForThread",
         "notifications.getNotificationsForActiveProfile",
         "calendar.getEventsByProfileIdsAndResourceIds",
+        "calendar.getBirthdayEventsForInstitutions",
         "calendar.getBirthdayEventsForInstitutions",
         "aulaToken.getAulaToken",
         "meebook",
