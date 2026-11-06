@@ -11,6 +11,7 @@ class AulaBirthdayEventData(TypedDict):
     institutionCode: str
     mainGroupName: NotRequired[str|None]
     name: str
+    relatedChildrenIds: NotRequired[List[int]]
 
 class AulaGetBirthdayEventsForInstitutionsResponse(TypedDict):
     """The answer, with the birthdays."""

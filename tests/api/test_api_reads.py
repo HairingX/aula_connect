@@ -164,6 +164,23 @@ def test_birthdays_threads_and_notifications_are_read() -> None:
     assert notifications == []
 
 
+def test_a_childs_birthdays_are_those_aula_ties_to_it_or_to_no_child() -> None:
+    def arrange(aula: SimulatedAulaApi) -> None:
+        birthday = {"institutionProfileId": 31, "birthday": "2017-01-03", "institutionCode": "S1", "mainGroupName": "3A"}
+        aula.birthdays = [
+            {**birthday, "name": "Bo", "relatedChildrenIds": [11]},
+            {**birthday, "name": "Liv", "relatedChildrenIds": [12]},
+            {**birthday, "name": "Max"},
+        ]
+
+    async def act(client: AulaProxyClient) -> Any:
+        assert client._login_result is not None
+        return await client.get_birthday_events(client._login_result.profiles[0].children, START, END)
+
+    birthdays, _ = _read(arrange, act)
+    assert [(birthday.full_name, birthday.related_children_ids) for birthday in birthdays] == [("Bo", [11]), ("Max", [])]
+
+
 def test_the_widgets_are_read_with_their_tokens() -> None:
     def arrange(aula: SimulatedAulaApi) -> None:
         aula.weekly_plans = [
