@@ -21,6 +21,7 @@ from aula_connect.api.aula_errors import AulaCredentialError, MethodRefusedError
 from aula_connect.api.aula_proxy_client import AulaProxyClient
 from aula_connect.capture import Recorder
 from aula_connect.http import HttpResponse, SentRequest
+from aula_connect.methods import known
 from aula_connect.testing import SimulatedAulaApi, SimulatedAulaLogin
 
 START = datetime(2026, 12, 28, tzinfo=timezone.utc)
@@ -219,6 +220,12 @@ def test_reading_everything_reads_each_kind_once_each_event_but_a_lesson_by_its_
         "aulaToken.getAulaToken",
         "minuddannelse",
     ]
+
+
+def test_every_method_this_library_asks_is_one_the_catalog_knows_asked_with_its_verb() -> None:
+    _, _, client, _ = _read_everything()
+    asked = {(exchange.endpoint, exchange.method) for exchange in client.api.recorder.exchanges() if "." in exchange.endpoint}
+    assert asked and all((found := known(name)) is not None and found.verb == verb for name, verb in asked), asked
 
 
 def test_the_answers_handed_out_hold_no_one_s_name_id_or_contact_and_no_token() -> None:
@@ -543,6 +550,45 @@ def test_reading_refuses_a_method_that_does_not_only_get(method: str) -> None:
 
     with pytest.raises(MethodRefusedError):
         _client_run(act)
+
+
+@pytest.mark.parametrize(
+    ("method", "body", "says"),
+    [
+        ("calendar.getEventDetail", None, "the one meant is 'calendar.getEventById'"),
+        ("profiles.getContactList", None, "the one meant is 'profiles.getContactlist'"),
+        ("presence.getDailyoverview", None, "it spells it 'presence.getDailyOverview'"),
+        ("messaging.getMessagesforthread", None, "the text of messages"),
+        ("presence.updateStatusByInstitutionProfileIds", {"status": 1}, "it changes Aula"),
+        ("profiles.keepAlive", None, "it changes Aula"),
+        ("aulaToken.getAulaToken", None, "which is a credential"),
+        ("messaging.getThreads", None, "the text of messages"),
+        ("search.findMessage", {"text": "x"}, "the text of messages"),
+        ("documents.getSecureDocuments", {"index": 0}, "secure documents"),
+        ("calendar.getEventsByProfileIdsAndResourceIds", None, "asked with POST, with a body"),
+        ("presence.getDailyOverview", {"childIds": [1]}, "asked with GET, without a body"),
+        ("messaging.getUnknownThing", None, "is not known"),
+        ("calendar.updateSomething", None, "is not known"),
+    ],
+)
+def test_reading_refuses_what_the_catalog_says_is_not_asked_so_and_asks_aula_nothing(method: str, body: dict[str, Any] | None, says: str) -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> list[str]:
+        await client.login()
+        asked = list(aula.requests)
+        with pytest.raises(MethodRefusedError, match=re.escape(says)):
+            await client.read(method, {}, KEY, body=body)
+        return aula.requests[len(asked):]
+
+    assert _client_run(act) == []
+
+
+def test_reading_asks_a_method_the_catalog_does_not_know_where_it_is_named_as_one_that_gets() -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> tuple[dict[str, Any], list[str]]:
+        await client.login()
+        return await client.read("calendar.getSomethingNew", {}, KEY), aula.requests
+
+    answer, asked = _client_run(act)
+    assert answer["status"] == 404 and asked[-1] == "calendar.getSomethingNew"
 
 
 @pytest.mark.parametrize("name", ["method", "Method", "access_token"])

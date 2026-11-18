@@ -146,6 +146,17 @@ def test_the_login_follows_aula_to_a_newer_version_of_its_api() -> None:
     assert _run(act, login=False) == (SimulatedAulaApi.VERSION + 2, SimulatedAulaApi.VERSION + 2)
 
 
+def test_a_version_aula_moves_to_while_logged_in_is_followed_at_the_next_login() -> None:
+    async def act(aula: SimulatedAulaApi, client: AulaProxyClient) -> tuple[int, int]:
+        aula.version = SimulatedAulaApi.VERSION + 1
+        await client.login()
+        assert client._login_result is not None
+        await client.get_daily_overviews(client._login_result.profiles)
+        return client.api_version, aula.requests.count("presence.getDailyOverview")
+
+    assert _run(act) == (SimulatedAulaApi.VERSION + 1, 1)
+
+
 def test_the_login_gives_up_on_an_api_ten_versions_on() -> None:
     async def act(aula: SimulatedAulaApi, client: AulaProxyClient) -> None:
         aula.version = SimulatedAulaApi.VERSION + 20

@@ -33,6 +33,7 @@ from .api.module import (
 )
 from .anomaly import Anomaly
 from .api.aula_errors import AulaCredentialError, MethodRefusedError
+from .methods import Kind, alike, meant
 from .pseudonym import pseudonymised, shapes
 from .login import AulaLoginClient
 from .redact import redact
@@ -283,24 +284,18 @@ class AulaClient:
     ) -> dict[str, Any]:
         """Ask Aula's API `method` with `params`, and give its answer as `responses` gives one.
 
-        Only a method that gets, named "<area>.get<What>", is asked, and never the messages of a
-        thread nor a secure document, which may be marked sensitive. It is asked with GET, or
-        with POST and `body` as JSON where `body` is given, as Aula asks some of the methods that
-        get. `reveal` keeps the values under the keys it names as Aula sent them, or all the
-        answer where it is True; the MitID username and every token are hidden all the same.
+        A method `aula_connect.methods` knows is asked as it is known to be: with GET, or with POST
+        and `body` as JSON; one it does not know is asked where it is named as one that gets,
+        "<area>.get<What>" or "<area>.find<What>". Never asked are a method that changes Aula, nor
+        what may be marked sensitive - the text of messages and secure documents. `reveal` keeps
+        the values under the keys it names as Aula sent them, or all the answer where it is True;
+        the MitID username and every token are hidden all the same.
 
         Raises:
-            MethodRefusedError: The method is not one that only gets, is one of those never
-                asked, or `params` or `body` names a method or a token.
+            MethodRefusedError: Aula has no method by the name, the method is never asked, it
+                is asked with the other verb, or `params` or `body` names a method or a token.
         """
-        if (
-            not re.fullmatch(r"[a-z]+\.get[A-Z][A-Za-z]*", method)
-            or method.lower() == "messaging.getmessagesforthread"
-            or "secure" in method.lower()
-        ):
-            raise MethodRefusedError(f"{method!r} is not a method that only gets")
-        if {"method", "access_token"} & {name.lower() for name in [*params, *(body or {})]}:
-            raise MethodRefusedError("params and body must not name a method or a token")
+        _refuse(method, params, body)
         await self._ensure_valid_token()
         await self._proxy.custom_api_call(
             f"?{urlencode({**params, 'method': method})}", None if body is None else json.dumps(body)
@@ -392,3 +387,28 @@ class AulaClient:
         """The children's weekly newsletters in MinUddannelse in the period."""
         await self._ensure_valid_token()
         return await self._proxy.get_newsletters(profiles, start_datetime, end_datetime)
+
+
+def _refuse(method: str, params: dict[str, str], body: dict[str, Any] | None) -> None:
+    """Raise MethodRefusedError where `method` is not to be asked with `params` and `body`."""
+    if (right := meant(method)) is not None:
+        raise MethodRefusedError(f"Aula has no method {method!r}; the one meant is {right!r}")
+    if (found := alike(method)) is not None:
+        if not found.readable:
+            raise MethodRefusedError(f"{method!r} is never asked: {_NEVER[found.kind]}")
+        if found.name != method:
+            raise MethodRefusedError(f"Aula has no method {method!r}; it spells it {found.name!r}")
+        if (found.verb == "POST") != (body is not None):
+            raise MethodRefusedError(f"{method!r} is asked with {found.verb}, {'with' if body is None else 'without'} a body")
+    elif not re.fullmatch(r"[a-z]+\.(get|find)[A-Z][A-Za-z]*", method) or re.search("messag|secure", method, re.IGNORECASE):
+        raise MethodRefusedError(f"{method!r} is not known, nor named as a method that only gets")
+    if {"method", "access_token"} & {name.lower() for name in [*params, *(body or {})]}:
+        raise MethodRefusedError("params and body must not name a method or a token")
+
+
+_NEVER = {
+    Kind.MESSAGES: "it gets the text of messages, which may be marked sensitive",
+    Kind.SECURE_DOCUMENTS: "it gets secure documents, which may be marked sensitive",
+    Kind.TOKEN: "it hands out a token, which is a credential",
+    Kind.WRITE: "it changes Aula",
+}
