@@ -392,7 +392,8 @@ class AulaLoginClient:
             response = await self.session.post(f"{self.nemlogin_url}/login/mitid", data=params)
             self.log(f"MitID completion response: {response.status_code}", "DEBUG")
             soup = BeautifulSoup(response.text, "html.parser")
-            if response.url == f"{self.nemlogin_url}/loginoption":
+            # The page may carry a query, so it is known by its path.
+            if response.url.split("?")[0] == f"{self.nemlogin_url}/loginoption":
                 self.log("Multiple identity options detected, choosing...")
                 response, soup = await self._choose_between_multiple_identities(response, soup)
         except (aiohttp.ClientError, TimeoutError) as e:

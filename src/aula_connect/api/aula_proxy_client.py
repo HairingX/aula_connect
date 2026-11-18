@@ -175,14 +175,12 @@ class AulaProxyClient:
     _tokens: dict[AulaWidgetId, AulaToken]
     _is_logged_in: bool = False
     _apiurl:str = ""
-    _username:str = ""
     _session:_TokenSession
     _token_refresh_callback: Callable[[], Awaitable[bool]] | None = None
     _last_recovery_at: datetime | None = None
 
-    def __init__(self, session: aiohttp.ClientSession, access_token: str, username_for_meebook: str = ""):
-        """Read Aula on `session` with `access_token`; Meebook knows the user by `username_for_meebook`."""
-        self._username = username_for_meebook
+    def __init__(self, session: aiohttp.ClientSession, access_token: str):
+        """Read Aula on `session` with `access_token`."""
         self._session = _TokenSession(session, timeout=REQUEST_TIMEOUT)
         self._session.set_access_token(access_token)
         self.recorder = Recorder()
@@ -650,6 +648,7 @@ class AulaProxyClient:
         if not self.has_widget(AulaWidgetId.WEEKPLAN_PARENTS): return []
         child_userids_as_str_list = list(set(str(child.user_id) for child in profiles))
         institution_profile_codes = list(set(child.institution_code for child in profiles))
+        guardian_user_id = await self._get_guardian_user_id()
         call = _WidgetCall(AulaWidgetId.WEEKPLAN_PARENTS, "Meebook", await self._get_token(AulaWidgetId.WEEKPLAN_PARENTS))
         requesturl = f"{self.meebook_api}/relatedweekplan/all?currentWeekNumber={{weekno}}&userProfile=guardian&childFilter[]={str.join("&childFilter[]=",child_userids_as_str_list)}&institutionFilter[]={str.join("&institutionFilter[]=",institution_profile_codes)}"
 
@@ -660,7 +659,7 @@ class AulaProxyClient:
             from_date = from_datetime.date()
             weekno = self._get_aula_week_formatted(from_date)
             url = requesturl.format(weekno=weekno)
-            response = await self._widget_send(call, lambda token: self._session.get(url, headers=self._get_meebook_header(token)))
+            response = await self._widget_send(call, lambda token: self._session.get(url, headers=self._get_meebook_header(guardian_user_id, token)))
             from_datetime += timedelta(weeks=1)
             if response is None or response.status_code != HTTPStatus.OK:
                 self._widget_failed(call, response, first)
@@ -869,7 +868,7 @@ class AulaProxyClient:
             result["authorization"] = token.bearer_token
         return result
 
-    def _get_meebook_header(self, token: AulaToken|None = None) -> Dict[str,str]:
+    def _get_meebook_header(self, guardian_user_id: str, token: AulaToken|None = None) -> Dict[str,str]:
         result: Dict[str, str] = {
             "user-agent": self._get_user_agent(),
             "authority": "app.meebook.com",
@@ -877,7 +876,7 @@ class AulaProxyClient:
             "dnt": "1",
             "origin": "https://www.aula.dk",
             "referer": "https://www.aula.dk/",
-            "sessionuuid": self._username,
+            "sessionuuid": guardian_user_id,
             "x-version": "1.0",
         }
         if token:
@@ -921,7 +920,8 @@ class AulaProxyClient:
 
     @staticmethod
     def _get_aula_week_formatted(timestamp: datetime|date) -> str:
-        return timestamp.strftime("%Y-W%V")
+        # The ISO week's own year: 29 December 2025 is in 2026-W01.
+        return timestamp.strftime("%G-W%V")
 
     async def _retry_on_401(self, response: HttpResponse, request_fn: Callable[[], Awaitable[HttpResponse]]) -> HttpResponse:
         """Where Aula refused the access token, renew it with the callback and send the request once more.

@@ -60,6 +60,22 @@ def test_the_identity_chosen_is_the_one_logged_in_as() -> None:
     assert asyncio.run(login()) == ("Teacher", ["Parent", "Teacher"])
 
 
+def test_the_identities_are_offered_when_their_page_carries_a_query() -> None:
+    async def login() -> str | None:
+        async with SimulatedAulaLogin(identities=["Parent", "Teacher"]) as aula, _session() as session:
+            aula.loginoption_query = "?lang=da"
+            client = aula.point(AulaLoginClient(session, "parent"))
+
+            async def choose(names: list[str]) -> str:
+                return "2"
+
+            client.identity_selector = choose
+            await client.authenticate()
+            return aula.chosen_identity
+
+    assert asyncio.run(login()) == "Teacher"
+
+
 def test_without_a_choice_the_first_identity_is_taken() -> None:
     async def login() -> str | None:
         async with SimulatedAulaLogin(identities=["Parent", "Teacher"]) as aula, _session() as session:
