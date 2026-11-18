@@ -187,6 +187,18 @@ class TestRaiseError(unittest.TestCase):
         with self.assertRaises(AulaApiError):
             AulaProxyClient._raise_error(_make_response(404))
 
+    def test_an_error_aula_gives_no_message_says_its_status_and_aulas_codes(self):
+        resp = _make_response(404, {"status": {"code": 10, "subCode": 0, "message": "", "errorInformation": []}})
+        with self.assertRaises(AulaApiError) as ctx:
+            AulaProxyClient._raise_error(resp)
+        self.assertEqual(str(ctx.exception), "HTTP 404 Not Found, Aula code 10, sub-code 0")
+
+    def test_an_error_says_aulas_message_after_its_status(self):
+        resp = _make_response(400, {"status": {"code": 40, "message": "Bad parameters"}})
+        with self.assertRaises(AulaApiError) as ctx:
+            AulaProxyClient._raise_error(resp)
+        self.assertEqual(str(ctx.exception), "HTTP 400 Bad Request, Aula code 40: Bad parameters")
+
     def test_ok_response_noop(self):
         AulaProxyClient._raise_error(_make_response(200))
 
