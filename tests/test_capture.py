@@ -110,7 +110,17 @@ def _account(aula: SimulatedAulaApi) -> None:
             "id": 5512345,
             "title": "Dansk",
             "type": "lesson",
-        }
+        },
+        {
+            "allDay": False,
+            "belongsToProfiles": [3301846],
+            "createdDateTime": "2026-12-01T08:00:00+00:00",
+            "startDateTime": "2026-12-29T15:00:00+00:00",
+            "endDateTime": "2026-12-29T16:00:00+00:00",
+            "id": 5512346,
+            "title": "Skole-hjem-samtale",
+            "type": "school_home_meeting",
+        },
     ]
     aula.weekly_plans = [
         {
@@ -183,7 +193,7 @@ def _same_shape(original: Any, replaced: Any) -> None:
         assert len(str(replaced)) == len(str(original)), (original, replaced)
 
 
-def test_reading_everything_reads_each_kind_once_the_next_birthday_too_and_no_sensitive_thread() -> None:
+def test_reading_everything_reads_each_kind_once_an_event_in_detail_the_next_birthday_too_and_no_sensitive_thread() -> None:
     failed, _, client, aula = _read_everything()
     assert failed == []
     birthdays = [exchange.url for exchange in client.api.recorder.exchanges() if "getBirthdayEvents" in exchange.url]
@@ -199,6 +209,7 @@ def test_reading_everything_reads_each_kind_once_the_next_birthday_too_and_no_se
         "messaging.getMessagesForThread",
         "notifications.getNotificationsForActiveProfile",
         "calendar.getEventsByProfileIdsAndResourceIds",
+        "calendar.getEventDetail",
         "calendar.getBirthdayEventsForInstitutions",
         "calendar.getBirthdayEventsForInstitutions",
         "aulaToken.getAulaToken",
@@ -235,7 +246,7 @@ def test_a_value_is_replaced_by_the_same_one_wherever_it_is() -> None:
     exchanges = {exchange["endpoint"]: exchange for exchange in export["exchanges"]}
     [profile] = exchanges["profiles.getProfilesByLogin"]["response"]["data"]["profiles"]
     [child] = profile["children"]
-    [event] = exchanges["calendar.getEventsByProfileIdsAndResourceIds"]["response"]["data"]
+    [event, _] = exchanges["calendar.getEventsByProfileIdsAndResourceIds"]["response"]["data"]
     [birthday] = exchanges["calendar.getBirthdayEventsForInstitutions"]["response"]["data"]
     [thread] = exchanges["messaging.getThreads"]["response"]["data"]["threads"][:1]
     first = child["name"].split()[0]

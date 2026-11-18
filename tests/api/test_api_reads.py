@@ -11,7 +11,7 @@ from typing import Any
 import aiohttp
 import pytest
 
-from aula_connect.api.aula_errors import AulaCredentialError
+from aula_connect.api.aula_errors import AulaApiError, AulaCredentialError
 from aula_connect.api.aula_proxy_client import AulaProxyClient
 from aula_connect.api.models.constants import AulaWidgetId
 from aula_connect.testing import SimulatedAulaApi
@@ -179,6 +179,27 @@ def test_a_childs_birthdays_are_those_aula_ties_to_it_or_to_no_child() -> None:
 
     birthdays, _ = _read(arrange, act)
     assert [(birthday.full_name, birthday.related_children_ids) for birthday in birthdays] == [("Bo", [11]), ("Max", [])]
+
+
+def test_an_events_detail_is_aulas_answer_as_it_sends_it() -> None:
+    def arrange(aula: SimulatedAulaApi) -> None:
+        aula.events = [{"id": 7, "title": "Forældremøde", "type": "parental_meeting"}]
+
+    async def act(client: AulaProxyClient) -> Any:
+        return await client.get_event_detail(7)
+
+    answer, aula = _read(arrange, act)
+    assert answer["data"]["title"] == "Forældremøde"
+    assert answer["data"]["description"] == {"html": "<p>Mere om det</p>"}
+    assert aula.requests[-1] == "calendar.getEventDetail"
+
+
+def test_an_event_aula_does_not_know_is_refused() -> None:
+    async def act(client: AulaProxyClient) -> Any:
+        return await client.get_event_detail(8)
+
+    with pytest.raises(AulaApiError):
+        _read(lambda aula: None, act)
 
 
 def test_the_widgets_are_read_with_their_tokens() -> None:

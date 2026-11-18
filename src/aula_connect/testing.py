@@ -505,6 +505,12 @@ class SimulatedAulaApi:
                 return self._ok(self.notifications)
             case "calendar.getEventsByProfileIdsAndResourceIds":
                 return self._ok([{**self._EVENT, **event} for event in self.events])
+            case "calendar.getEventDetail":
+                event_id = request.query.get("eventId", "")
+                found = [event for event in self.events if str(event.get("id")) == event_id]
+                if not found:
+                    return web.json_response({"status": {"code": 40, "message": ""}, "data": None}, status=400)
+                return self._ok({**self._EVENT, **found[0], "description": {"html": "<p>Mere om det</p>"}})
             case "calendar.getBirthdayEventsForInstitutions":
                 return self._ok(self.birthdays)
             case "aulaToken.getAulaToken":

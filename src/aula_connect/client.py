@@ -193,6 +193,11 @@ class AulaClient:
         await self._ensure_valid_token()
         return await self._proxy.get_birthday_events(profiles, start_datetime, end_datetime)
 
+    async def get_event_detail(self, event_id: int) -> Any:
+        """Aula's answer to calendar.getEventDetail for the event `event_id`, as Aula sends it."""
+        await self._ensure_valid_token()
+        return await self._proxy.get_event_detail(event_id)
+
     async def get_messages(self, thread: AulaMessageThread) -> List[AulaMessage]:
         """The newest page of the messages of a thread not marked sensitive."""
         await self._ensure_valid_token()
@@ -201,7 +206,8 @@ class AulaClient:
     async def read_everything(self, start: datetime.datetime, end: datetime.datetime) -> List[str]:
         """Read once all this client reads from Aula, so that its recorder holds each answer.
 
-        `start` and `end` bound the calendar events, birthdays, weekly plans and newsletters, and
+        `start` and `end` bound the calendar events, each but a lesson read in detail too, the
+        birthdays, weekly plans and newsletters, and
         the next birthday from `start` is looked for too, four weeks a request, a year at most; the messages of every thread of the
         newest page are read as well, but for those Aula marks sensitive, which the client never
         reads.
@@ -235,7 +241,9 @@ class AulaClient:
             await read("messages", partial(self.get_messages, thread))
         await read("notifications", partial(self.get_notifications, children))
         for institution in institutions.values():
-            await read("calendar events", partial(self.get_calendar_events, [institution], start, end))
+            events = await read("calendar events", partial(self.get_calendar_events, [institution], start, end)) or []
+            for event in [event for event in events if event.type != "lesson"]:
+                await read("event detail", partial(self.get_event_detail, event.id))
         await read("birthdays", partial(self.get_birthday_events, children, start, end))
         for period in range(0, YEAR.days, BIRTHDAY_PERIOD.days):
             begin = start + datetime.timedelta(days=period)
