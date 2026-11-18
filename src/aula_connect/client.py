@@ -5,6 +5,7 @@ from functools import partial
 from typing import Any, Callable, List
 import asyncio
 import datetime
+import json
 import logging
 import re
 import time
@@ -273,18 +274,24 @@ class AulaClient:
         return self._proxy.anomalies(since)
 
     async def read(
-        self, method: str, params: dict[str, str], key: bytes, reveal: bool | Collection[str] = False
+        self,
+        method: str,
+        params: dict[str, str],
+        key: bytes,
+        reveal: bool | Collection[str] = False,
+        body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Ask Aula's API `method` with `params`, and give its answer as `responses` gives one.
 
         Only a method that gets, named "<area>.get<What>", is asked, and never the messages of a
-        thread nor a secure document, which may be marked sensitive. `reveal` keeps the values
-        under the keys it names as Aula sent them, or all the answer where it is True; the MitID
-        username and every token are hidden all the same.
+        thread nor a secure document, which may be marked sensitive. It is asked with GET, or
+        with POST and `body` as JSON where `body` is given, as Aula asks some of the methods that
+        get. `reveal` keeps the values under the keys it names as Aula sent them, or all the
+        answer where it is True; the MitID username and every token are hidden all the same.
 
         Raises:
             MethodRefusedError: The method is not one that only gets, is one of those never
-                asked, or `params` names a method or a token.
+                asked, or `params` or `body` names a method or a token.
         """
         if (
             not re.fullmatch(r"[a-z]+\.get[A-Z][A-Za-z]*", method)
@@ -292,10 +299,12 @@ class AulaClient:
             or "secure" in method.lower()
         ):
             raise MethodRefusedError(f"{method!r} is not a method that only gets")
-        if {"method", "access_token"} & {name.lower() for name in params}:
-            raise MethodRefusedError("params must not name a method or a token")
+        if {"method", "access_token"} & {name.lower() for name in [*params, *(body or {})]}:
+            raise MethodRefusedError("params and body must not name a method or a token")
         await self._ensure_valid_token()
-        await self._proxy.custom_api_call(f"?{urlencode({**params, 'method': method})}", None)
+        await self._proxy.custom_api_call(
+            f"?{urlencode({**params, 'method': method})}", None if body is None else json.dumps(body)
+        )
         secrets = [self._mitid_username, self._access_token, self._refresh_token, *self._proxy.secrets()]
         answers = pseudonymised(self._proxy.recorder.exchanges(), key, secrets, reveal)
         return [answer for answer in answers if answer["endpoint"] == method][-1]

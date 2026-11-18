@@ -520,6 +520,19 @@ def test_reading_a_method_can_reveal_the_keys_asked_for_or_all_but_never_a_token
     assert set(every["headers"]["Set-Cookie"]) == {"x"}
 
 
+def test_reading_a_method_with_a_body_posts_it_as_aula_asks_some_methods_that_get() -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> dict[str, Any]:
+        _account(aula)
+        await client.login()
+        body = {"instProfileIds": [3301846], "resourceIds": [], "start": "2026-12-28 00:00:00.0000+01:00", "end": "2027-01-04 00:00:00.0000+01:00"}
+        return await client.read("calendar.getEventsByProfileIdsAndResourceIds", {}, KEY, reveal=["id"], body=body)
+
+    answer = _client_run(act)
+    assert answer["method"] == "POST"
+    assert answer["request"]["resourceIds"] == []
+    assert [event["id"] for event in answer["response"]["data"]] == [5512345, 5512346]
+
+
 @pytest.mark.parametrize(
     "method",
     ["messaging.deleteThread", "messaging.getMessagesForThread", "messaging.getMessagesforthread", "documents.getSecureDocuments", "get", "x.get"],
@@ -536,6 +549,15 @@ def test_reading_refuses_a_method_that_does_not_only_get(method: str) -> None:
 def test_reading_refuses_params_that_name_another_method_or_a_token(name: str) -> None:
     async def act(client: AulaClient, aula: SimulatedAulaApi) -> None:
         await client.read("profiles.getProfilesByLogin", {name: "messaging.getMessagesForThread"}, KEY)
+
+    with pytest.raises(MethodRefusedError):
+        _client_run(act)
+
+
+@pytest.mark.parametrize("name", ["method", "access_token"])
+def test_reading_refuses_a_body_that_names_another_method_or_a_token(name: str) -> None:
+    async def act(client: AulaClient, aula: SimulatedAulaApi) -> None:
+        await client.read("calendar.getEventsByProfileIdsAndResourceIds", {}, KEY, body={name: "x"})
 
     with pytest.raises(MethodRefusedError):
         _client_run(act)
