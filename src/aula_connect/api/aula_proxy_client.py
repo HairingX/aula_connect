@@ -537,11 +537,11 @@ class AulaProxyClient:
         _LOGGER.debug("Fetched calendar events: %s", len(events))
         return events
 
-    async def get_event_detail(self, event_id: int) -> Any:
-        """Aula's answer to calendar.getEventDetail for the event `event_id`, as Aula sends it."""
-        api_method = "calendar.getEventDetail"
+    async def get_event(self, event_id: int) -> Any:
+        """Aula's answer to calendar.getEventById for the event `event_id`, as Aula sends it."""
+        api_method = "calendar.getEventById"
         requesturl = f"{self._apiurl}?method={api_method}&eventId={event_id}"
-        return await self._read(api_method, "event detail", lambda: self._session.get(requesturl))
+        return await self._read(api_method, "event", lambda: self._session.get(requesturl))
 
     async def get_daily_overviews(self, profiles: List[AulaProfile]) -> List[AulaDailyOverview]:
         """Today's presence of the profiles' children."""

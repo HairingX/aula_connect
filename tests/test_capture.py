@@ -193,7 +193,7 @@ def _same_shape(original: Any, replaced: Any) -> None:
         assert len(str(replaced)) == len(str(original)), (original, replaced)
 
 
-def test_reading_everything_reads_each_kind_once_an_event_in_detail_the_next_birthday_too_and_no_sensitive_thread() -> None:
+def test_reading_everything_reads_each_kind_once_each_event_but_a_lesson_by_its_id_the_next_birthday_too_and_no_sensitive_thread() -> None:
     failed, _, client, aula = _read_everything()
     assert failed == []
     birthdays = [exchange.url for exchange in client.api.recorder.exchanges() if "getBirthdayEvents" in exchange.url]
@@ -209,7 +209,7 @@ def test_reading_everything_reads_each_kind_once_an_event_in_detail_the_next_bir
         "messaging.getMessagesForThread",
         "notifications.getNotificationsForActiveProfile",
         "calendar.getEventsByProfileIdsAndResourceIds",
-        "calendar.getEventDetail",
+        "calendar.getEventById",
         "calendar.getBirthdayEventsForInstitutions",
         "calendar.getBirthdayEventsForInstitutions",
         "aulaToken.getAulaToken",

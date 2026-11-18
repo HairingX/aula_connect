@@ -505,7 +505,7 @@ class SimulatedAulaApi:
                 return self._ok(self.notifications)
             case "calendar.getEventsByProfileIdsAndResourceIds":
                 return self._ok([{**self._EVENT, **event} for event in self.events])
-            case "calendar.getEventDetail":
+            case "calendar.getEventById":
                 event_id = request.query.get("eventId", "")
                 found = [event for event in self.events if str(event.get("id")) == event_id]
                 if not found:
