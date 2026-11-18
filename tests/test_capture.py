@@ -555,9 +555,6 @@ def test_reading_refuses_a_method_that_does_not_only_get(method: str) -> None:
 @pytest.mark.parametrize(
     ("method", "body", "says"),
     [
-        ("calendar.getEventDetail", None, "the one meant is 'calendar.getEventById'"),
-        ("profiles.getContactList", None, "the one meant is 'profiles.getContactlist'"),
-        ("presence.getDailyoverview", None, "it spells it 'presence.getDailyOverview'"),
         ("messaging.getMessagesforthread", None, "the text of messages"),
         ("presence.updateStatusByInstitutionProfileIds", {"status": 1}, "it changes Aula"),
         ("profiles.keepAlive", None, "it changes Aula"),

@@ -2,10 +2,10 @@
 
 from pathlib import Path
 
-from aula_connect.methods import METHODS, WRONG_NAMES, AulaMethod, Parameter
+from aula_connect.methods import METHODS, AulaMethod, Parameter
 
 DOC = Path(__file__).parent.parent / "docs" / "aula-methods.md"
-MARK = "<!-- The tables below are checked against aula_connect.methods by the tests. -->"
+MARK = "<!-- The table below is checked against aula_connect.methods by the tests. -->"
 
 
 def _parameters(parameters: tuple[Parameter, ...]) -> str:
@@ -17,15 +17,11 @@ def _row(method: AulaMethod) -> str:
 
 
 def tables() -> str:
-    """The tables the documentation holds after its mark."""
+    """The table the documentation holds after its mark."""
     methods = "\n".join(_row(method) for method in sorted(METHODS.values(), key=lambda m: m.name.lower()))
-    wrong = "\n".join(f"| `{name}` | `{right}` |" for name, right in sorted(WRONG_NAMES.items()))
-    return (
-        f"{MARK}\n\n## Methods\n\n| Method | Verb | Kind | Evidence | Query | Body |\n|---|---|---|---|---|---|\n{methods}\n"
-        f"\n## Names Aula has no method by\n\n| Name | The method meant |\n|---|---|\n{wrong}\n"
-    )
+    return f"{MARK}\n\n## Methods\n\n| Method | Verb | Kind | Evidence | Query | Body |\n|---|---|---|---|---|---|\n{methods}\n"
 
 
-def test_the_documentation_lists_every_method_and_wrong_name_as_the_catalog_does() -> None:
+def test_the_documentation_lists_every_method_as_the_catalog_does() -> None:
     text = DOC.read_text(encoding="utf-8")
     assert text[text.index(MARK):] == tables()

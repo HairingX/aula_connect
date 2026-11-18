@@ -1,4 +1,4 @@
-"""The methods of Aula's API known by name, how each is asked, and the names Aula does not have.
+"""The methods of Aula's API known by name, and how each is asked.
 
 A name not listed here may still be one Aula has; it is only not known to exist.
 """
@@ -135,15 +135,6 @@ METHODS: Mapping[str, AulaMethod] = {
 }
 """Every method known to exist, by its name as Aula spells it."""
 
-WRONG_NAMES: Mapping[str, str] = {
-    "calendar.getEventDetail": "calendar.getEventById",
-    "presence.getVacationRegistrations": "presence.getVacationRegistrationsByChildren",
-    "profiles.getContactList": "profiles.getContactlist",
-    "search.searchGroups": "search.findGroups",
-    "secureDocument.getCommonFiles": "commonFiles.getCommonFiles",
-    "secureDocument.getSecureDocuments": "documents.getSecureDocuments",
-}
-"""Names Aula has no method by, each with the name of the method meant."""
 
 _BY_LOWER = {name.lower(): method for name, method in METHODS.items()}
 
@@ -154,14 +145,6 @@ def known(name: str) -> AulaMethod | None:
 
 
 def alike(name: str) -> AulaMethod | None:
-    """The method known by `name` in any case, as Aula spells it; None where none is.
-
-    Aula tells names apart by their case: `profiles.getContactList` is no method, where
-    `profiles.getContactlist` is.
-    """
+    """The method known by `name` in any case; None where none is."""
     return _BY_LOWER.get(name.lower())
 
-
-def meant(name: str) -> str | None:
-    """The method meant by `name` where Aula has none by it; else None."""
-    return WRONG_NAMES.get(name)

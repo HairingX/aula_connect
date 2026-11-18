@@ -2,8 +2,8 @@
 
 Aula's API is one address, `https://www.aula.dk/api/v<version>`, asked with the method's name in
 `method=` and its parameters beside it. `aula_connect.methods` lists every method known to exist,
-how it is asked, and the names Aula has no method by, so that none is guessed. `AulaClient.read`
-asks a listed method with its verb, and never one of a kind it does not ask.
+and how it is asked, so that none is guessed. `AulaClient.read` asks a listed method with its verb,
+and never one of a kind it does not ask, whatever the case of its name.
 
 - **Spelling.** Aula tells names apart by their case: `profiles.getContactList` is no method, where
   `profiles.getContactlist` is. A name is listed as Aula spells it. The parameters' spelling
@@ -21,11 +21,11 @@ asks a listed method with its verb, and never one of a kind it does not ask.
 A name not listed may still be one Aula has. `read` asks one where it is named as a method that
 gets, `<area>.get<What>` or `<area>.find<What>`, and is about neither messages nor secure documents.
 
-The methods marked `used`, their parameters and the names Aula has no method by come from
+The methods marked `used` and their parameters come from
 [nickknissen/aula](https://github.com/nickknissen/aula) (MIT licence, "Copyright (c) 2025 Nick"),
-as of its commit 6a79d3e; `calendar.getEventDetail` was found to be no method by this library.
+as of its commit 6a79d3e.
 
-<!-- The tables below are checked against aula_connect.methods by the tests. -->
+<!-- The table below is checked against aula_connect.methods by the tests. -->
 
 ## Methods
 
@@ -88,14 +88,3 @@ as of its commit 6a79d3e; `calendar.getEventDetail` was found to be no method by
 | `search.findMessage` | POST | messages | used | - | `text`, `typeahead`, `exactTerm`, `activeChildrenInstitutionProfileIds`, `institutionCodes`, `limit`, `offset`, `commonInboxID`, `filterBy`, `sortBy`, `sortDirection`, `threadSubject`, `messageContent`, `fromDate`, `toDate`, `threadCreators`, `participants`, `hasAttachments` |
 | `search.findProfilesAndGroups` | GET | read | used | `Text`, `Limit`, `Typeahead` | - |
 | `search.findRecipients` | GET | read | used | `Text`, `Limit`, `TypeAhead`, `DocTypes` (optional), `PortalRoles` (optional) | - |
-
-## Names Aula has no method by
-
-| Name | The method meant |
-|---|---|
-| `calendar.getEventDetail` | `calendar.getEventById` |
-| `presence.getVacationRegistrations` | `presence.getVacationRegistrationsByChildren` |
-| `profiles.getContactList` | `profiles.getContactlist` |
-| `search.searchGroups` | `search.findGroups` |
-| `secureDocument.getCommonFiles` | `commonFiles.getCommonFiles` |
-| `secureDocument.getSecureDocuments` | `documents.getSecureDocuments` |

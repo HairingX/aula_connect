@@ -33,7 +33,7 @@ from .api.module import (
 )
 from .anomaly import Anomaly
 from .api.aula_errors import AulaCredentialError, MethodRefusedError
-from .methods import Kind, alike, meant
+from .methods import Kind, alike, known
 from .pseudonym import pseudonymised, shapes
 from .login import AulaLoginClient
 from .redact import redact
@@ -292,8 +292,8 @@ class AulaClient:
         the MitID username and every token are hidden all the same.
 
         Raises:
-            MethodRefusedError: Aula has no method by the name, the method is never asked, it
-                is asked with the other verb, or `params` or `body` names a method or a token.
+            MethodRefusedError: The method is never asked, in any case, it is asked with the
+                other verb, or `params` or `body` names a method or a token.
         """
         _refuse(method, params, body)
         await self._ensure_valid_token()
@@ -391,13 +391,9 @@ class AulaClient:
 
 def _refuse(method: str, params: dict[str, str], body: dict[str, Any] | None) -> None:
     """Raise MethodRefusedError where `method` is not to be asked with `params` and `body`."""
-    if (right := meant(method)) is not None:
-        raise MethodRefusedError(f"Aula has no method {method!r}; the one meant is {right!r}")
-    if (found := alike(method)) is not None:
-        if not found.readable:
-            raise MethodRefusedError(f"{method!r} is never asked: {_NEVER[found.kind]}")
-        if found.name != method:
-            raise MethodRefusedError(f"Aula has no method {method!r}; it spells it {found.name!r}")
+    if (never := alike(method)) is not None and not never.readable:
+        raise MethodRefusedError(f"{method!r} is never asked: {_NEVER[never.kind]}")
+    if (found := known(method)) is not None:
         if (found.verb == "POST") != (body is not None):
             raise MethodRefusedError(f"{method!r} is asked with {found.verb}, {'with' if body is None else 'without'} a body")
     elif not re.fullmatch(r"[a-z]+\.(get|find)[A-Z][A-Za-z]*", method) or re.search("messag|secure", method, re.IGNORECASE):
