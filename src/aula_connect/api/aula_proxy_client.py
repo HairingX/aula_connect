@@ -30,6 +30,8 @@ from .models.module import (
     AulaDailyOverview,
     AulaEasyiqWeeklyPlan,
     AulaEasyiqWeekplanParser,
+    AulaEventDetail,
+    AulaEventDetailParser,
     AulaInstitutionProfile,
     AulaLoginData,
     AulaMessage,
@@ -554,11 +556,13 @@ class AulaProxyClient:
         _LOGGER.debug("Fetched calendar events: %s", len(events))
         return events
 
-    async def get_event(self, event_id: int) -> Any:
-        """Aula's answer to calendar.getEventById for the event `event_id`, as Aula sends it."""
+    async def get_event(self, event_id: int) -> AulaEventDetail | None:
+        """The event `event_id` as Aula tells it alone; None where Aula answered with no content."""
         api_method = "calendar.getEventById"
         requesturl = f"{self._apiurl}?method={api_method}&eventId={event_id}"
-        return await self._read(api_method, "event", lambda: self._session.get(requesturl))
+        data = await self._read(api_method, "event", lambda: self._session.get(requesturl))
+        if data is None: return None
+        return self._parse("event", AulaEventDetailParser.parse_response, data)
 
     async def get_daily_overviews(self, profiles: List[AulaProfile]) -> List[AulaDailyOverview]:
         """Today's presence of the profiles' children."""

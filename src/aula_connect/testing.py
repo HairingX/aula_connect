@@ -396,6 +396,8 @@ class SimulatedAulaApi:
         self.messages: dict[int, list[dict[str, object]]] = {}
         self.notifications: list[dict[str, object]] = []
         self.events: list[dict[str, object]] = []
+        self.event_details: dict[int, dict[str, object]] = {}
+        """What Aula sends of an event alone besides what it lists of it, by the event's id."""
         self.birthdays: list[dict[str, object]] = []
         self.weekly_plans: list[dict[str, object]] = []
         self.easyiq_events: list[dict[str, object]] = []
@@ -530,7 +532,7 @@ class SimulatedAulaApi:
                 if not found:
                     return web.json_response({"status": {"code": 40, "message": ""}, "data": None}, status=400)
                 listed = {name: value for name, value in found[0].items() if name not in self._LISTED_ONLY}
-                return self._ok({**self._DETAIL, **listed})
+                return self._ok({**self._DETAIL, **listed, **self.event_details.get(int(event_id), {})})
             case "calendar.getBirthdayEventsForInstitutions":
                 return self._ok(self.birthdays)
             case "aulaToken.getAulaToken":

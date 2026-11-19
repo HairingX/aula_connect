@@ -4,6 +4,7 @@ from .constants import AulaCalendarEventType
 
 from .aula_birthday_parser import AulaBirthdayParser
 from .aula_calendar_parser import AulaCalendarParser
+from .aula_event_detail_parser import AulaEventDetailParser
 from .aula_message_thread_parser import AulaMessageThreadParser
 from .aula_notification_parser import AulaNotificationParser
 from .aula_profile_parser import AulaProfileParser
@@ -23,6 +24,11 @@ from .aula_calendar_models import (
     AulaCalendarEventTimeSlotEntry,
     AulaCalendarEventTimeSlotEntryAnswer,
     AulaCalendarEventTimeSlotEntryIndex,
+)
+from .aula_event_detail_models import (
+    AulaEventBooking,
+    AulaEventDetail,
+    AulaEventInvitation,
 )
 from .aula_message_thread_models import (
     AulaMessage,
@@ -81,6 +87,7 @@ __all__ = [
     #parsers
     'AulaBirthdayParser',
     'AulaCalendarParser',
+    'AulaEventDetailParser',
     'AulaMessageThreadParser',
     'AulaNotificationParser',
     'AulaProfileParser',
@@ -100,6 +107,9 @@ __all__ = [
     'AulaCalendarEventTimeSlotEntry',
     'AulaCalendarEventTimeSlotEntryAnswer',
     'AulaCalendarEventTimeSlotEntryIndex',
+    'AulaEventBooking',
+    'AulaEventDetail',
+    'AulaEventInvitation',
     #message
     'AulaMessage',
     'AulaMessageText',

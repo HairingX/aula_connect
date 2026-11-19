@@ -9,6 +9,7 @@ from datetime import date, datetime, time, timezone
 from typing import Any
 
 import aiohttp
+from aiohttp import web
 import pytest
 
 from aula_connect.api.aula_errors import AulaApiError, AulaCredentialError
@@ -181,17 +182,92 @@ def test_a_childs_birthdays_are_those_aula_ties_to_it_or_to_no_child() -> None:
     assert [(birthday.full_name, birthday.related_children_ids) for birthday in birthdays] == [("Bo", [11]), ("Max", [])]
 
 
-def test_an_event_read_by_its_id_is_aulas_answer_as_it_sends_it() -> None:
+def _parent(id_: int, name: str) -> dict[str, object]:
+    return {"instProfile": {"id": id_, "fullName": name, "firstName": name.split()[0]}, "responseType": "accepted", "responseDateTime": "2026-12-01T10:00:00+00:00"}
+
+
+MEETING: dict[str, object] = {
+    "creator": {"name": "Birgitte Holm", "institutionRole": "teacher", "role": "employee"},
+    "coOrganizers": [{"instProfile": {"id": 900, "fullName": "Jens Lund"}, "responseType": "accepted"}],
+    "inviteeGroups": [{"group": {"name": "3A"}, "invitedPortalRoles": ["guardian"]}],
+    "invitees": [_parent(201, "Pat Example"), {**_parent(202, "Kim Andersen"), "responseType": "waiting", "responseDateTime": None}],
+    "attachments": [{}],
+    "responseRequired": True,
+    "responseDeadline": "2026-12-20T22:59:59+00:00",
+    "isDeadlineExceeded": False,
+    "institutionName": "Example School",
+    "timeSlot": {
+        "timeSlots": [
+            {
+                "id": 1,
+                "startDate": "2027-01-05T00:00:00+00:00",
+                "endDate": "2027-01-05T00:00:00+00:00",
+                "primaryResource": {"id": 4, "name": "Lokale 12", "displayName": "Lokale 12 (Example School)"},
+                "primaryResourceText": None,
+                "timeSlotIndexes": [
+                    {"startTime": "2027-01-05T14:00:00.000+00:00", "endTime": "2027-01-05T14:15:00.000+00:00"},
+                    {"startTime": "2027-01-05T14:15:00.000+00:00", "endTime": "2027-01-05T14:30:00.000+00:00"},
+                ],
+                "answers": [
+                    {"id": 1, "selectedTimeSlotIndex": 1, "concerningProfile": {"id": 101, "fullName": "Alma Example"}, "instProfile": {"id": 201}},
+                    {"id": 2, "selectedTimeSlotIndex": 0, "concerningProfile": {"id": 102, "fullName": "Bo Andersen"}, "instProfile": {"id": 202}},
+                    {"id": 3, "selectedTimeSlotIndex": 9, "concerningProfile": {"id": 103, "fullName": "Cy Lost"}, "instProfile": {"id": 203}},
+                ],
+            }
+        ]
+    },
+}
+
+
+def test_an_event_read_by_its_id_says_what_aula_tells_of_it_alone() -> None:
     def arrange(aula: SimulatedAulaApi) -> None:
-        aula.events = [{"id": 7, "title": "Forældremøde", "type": "parental_meeting"}]
+        aula.events = [{"id": 7, "title": "Forældremøde", "type": "parental_meeting", "startDateTime": "2027-01-05T13:00:00+00:00"}]
+        aula.event_details = {7: MEETING}
+
+    async def act(client: AulaProxyClient) -> Any:
+        return await client.get_event(7), [anomaly.detail for anomaly in client.anomalies()]
+
+    (detail, anomalies), aula = _read(arrange, act)
+    assert anomalies == []
+    assert aula.requests[-1] == "calendar.getEventById"
+    assert (detail.title, detail.type, detail.description_html) == ("Forældremøde", "parental_meeting", "<p>Mere om det</p>")
+    assert (detail.creator_name, detail.creator_role, detail.co_organizer_names, detail.invited_group_names) == ("Birgitte Holm", "teacher", ["Jens Lund"], ["3A"])
+    assert (detail.response_required, detail.deadline_exceeded, detail.attachment_count, detail.institution_name) == (True, False, 1, "Example School")
+    assert detail.response_deadline is not None and detail.response_deadline.isoformat().startswith("2026-12-2")
+    assert [(invitation.institution_profile_id, invitation.response) for invitation in detail.invitations] == [(201, "accepted"), (202, "waiting")]
+    own = detail.invitation_of([201])
+    assert own is not None and own.answered_at is not None and detail.invitation_of([999]) is None
+    booking = detail.booking_for(101)
+    assert booking is not None and (booking.institution_profile_id, booking.location) == (201, "Lokale 12")
+    assert booking.time.start_datetime.astimezone(timezone.utc).isoformat() == "2027-01-05T14:15:00+00:00"
+    assert detail.booking_for(103) is None and detail.booking_for(999) is None
+    assert "Kim" not in repr(detail) and "Bo Andersen" not in repr(detail) and "Pat Example" not in repr(detail)
+
+
+def test_an_event_without_a_resource_takes_its_place_from_the_text_or_has_none() -> None:
+    def arrange(aula: SimulatedAulaApi) -> None:
+        aula.events = [{"id": 7, "title": "Udflugt", "type": "event"}, {"id": 8, "title": "Dag", "type": "event"}]
+        aula.event_details = {7: {"primaryResourceText": "Skoven", "creator": None, "description": None}}
+
+    async def act(client: AulaProxyClient) -> Any:
+        return await client.get_event(7), await client.get_event(8)
+
+    (outing, day), _ = _read(arrange, act)
+    assert (outing.location, outing.creator_name, outing.description_html, outing.bookings) == ("Skoven", "", "", [])
+    assert day.location is None
+
+
+def test_an_event_aula_answers_without_content_is_none() -> None:
+    async def no_content(request: web.Request) -> web.Response:
+        return web.Response(status=204)
+
+    def arrange(aula: SimulatedAulaApi) -> None:
+        aula.answers["calendar.getEventById"] = no_content
 
     async def act(client: AulaProxyClient) -> Any:
         return await client.get_event(7)
 
-    answer, aula = _read(arrange, act)
-    assert answer["data"]["title"] == "Forældremøde"
-    assert answer["data"]["description"] == {"html": "<p>Mere om det</p>"}
-    assert aula.requests[-1] == "calendar.getEventById"
+    assert _read(arrange, act)[0] is None
 
 
 def test_an_event_aula_does_not_know_is_refused() -> None:

@@ -18,6 +18,7 @@ from .api.models.constants import AulaWidgetId
 from .api.module import (
     AulaBirthdayEvent,
     AulaCalendarEvent,
+    AulaEventDetail,
     AulaDailyOverview,
     AulaEasyiqWeeklyPlan,
     AulaInstitutionProfile,
@@ -195,8 +196,8 @@ class AulaClient:
         await self._ensure_valid_token()
         return await self._proxy.get_birthday_events(profiles, start_datetime, end_datetime)
 
-    async def get_event(self, event_id: int) -> Any:
-        """Aula's answer to calendar.getEventById for the event `event_id`, as Aula sends it."""
+    async def get_event(self, event_id: int) -> AulaEventDetail | None:
+        """The event `event_id` as Aula tells it alone; None where Aula answered with no content."""
         await self._ensure_valid_token()
         return await self._proxy.get_event(event_id)
 
