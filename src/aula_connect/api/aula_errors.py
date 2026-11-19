@@ -31,3 +31,6 @@ class SickReportRouteNotSupportedError(Exception):
         """The child is reported sick through `route`."""
         super().__init__(f"The child is reported sick through {route}, which is not supported yet")
         self.route = route
+
+class NoTabulexWidgetError(Exception):
+    """The login has no widget of IST's that signs in to Tabulex."""

@@ -21,7 +21,7 @@ from ..redact import redact
 from .aula_errors import AulaCredentialError, AulaApiError, ParseError
 from .models.constants import AulaWidgetId
 from .models.aula_notification_models import NotificationArea
-from .aula_errors import NoSickReportRouteError, SickReportRouteNotSupportedError
+from .aula_errors import NoSickReportRouteError, NoTabulexWidgetError, SickReportRouteNotSupportedError
 from .models.aula_parser import now
 from .models.module import (
     AULA_NOTIFICATION_TYPES,
@@ -231,7 +231,7 @@ class AulaProxyClient:
     api_version:int = int(API_VERSION)
 
     _login_result: AulaLoginData | None = None
-    _tokens: dict[AulaWidgetId, AulaToken]
+    _tokens: dict[str, AulaToken]
     _is_logged_in: bool = False
     _apiurl:str = ""
     _session:_TokenSession
@@ -723,6 +723,48 @@ class AulaProxyClient:
         """The children's institution profile ids as a query's parameters, each once."""
         return "".join(f"&{name}={child_id}" for child_id in dict.fromkeys(child.id for child in children))
 
+    async def tabulex_login_form(self) -> tuple[str, str, Dict[str, str]]:
+        """The login's Tabulex widget's id, its address, and the fields Aula's portal posts there on a desktop.
+
+        The user's context is read anew, as the portal has it, and a new widget token fetched.
+        The fields hold the token: they are a credential, never to be logged.
+
+        Raises:
+            NoTabulexWidgetError: The login has no widget of IST's that signs in to Tabulex.
+            AulaApiError: No widget token could be fetched.
+        """
+        url = f"{self._apiurl}?method=profiles.getProfileContext&portalrole=guardian"
+        response: AulaGetProfileContextResponse | None = await self._read("profiles.getProfileContext", "profile context", lambda: self._session.get(url))
+        if response is None:
+            raise NoTabulexWidgetError("Aula tells nothing of the user's context")
+        data = response["data"]
+        widgets = [configuration["widget"] for configuration in data["pageConfiguration"]["widgetConfigurations"]]
+        widget = next(
+            (
+                found for found in widgets
+                if found.get("type") == "sso" and self._is_tabulex(found.get("widgetSupplier"), found.get("url"))
+            ),
+            None,
+        )
+        if widget is None:
+            raise NoTabulexWidgetError("The login has no widget of IST's that signs in to Tabulex")
+        widget_id, address = str(widget.get("widgetId") or ""), str(widget.get("url") or "")
+        token = await self._refresh_token(widget_id, force=True)
+        institutions = data.get("institutions") or []
+        week = now().isocalendar()
+        fields = {
+            "sessionUUID": data["userId"],
+            "isMobileApp": "false",
+            "aulaToken": "" if token is None else token.bearer_token.removeprefix("Bearer "),
+            "assuranceLevel": "3" if data.get("isSteppedUp") else "2",
+            "userProfile": str((data.get("institutionProfile") or {}).get("role") or ""),
+            "childFilter": ",".join(dict.fromkeys(child["userId"] for institution in institutions for child in institution.get("children") or [])),
+            "institutionFilter": ",".join(dict.fromkeys(str(institution.get("institutionCode") or "") for institution in institutions)),
+            "group": "",
+            "currentWeekNumber": f"{week.year}-W{week.week}",
+        }
+        return widget_id, address, fields
+
     async def get_presence_configurations(self, children: List[AulaChildProfile]) -> List[AulaPresenceConfiguration]:
         """What the children's guardian may see and do in the presence module, for each child Aula tells it of."""
         if not children: return []
@@ -741,14 +783,14 @@ class AulaProxyClient:
         if any(found.child_id == child.id and found.editable(AulaPresenceModuleType.REPORT_SICK) for found in configurations):
             return AulaSickReportRoute.AULA
         widgets = [] if self._login_result is None else self._login_result.widgets
-        if any(self._is_tabulex(widget) for widget in widgets):
+        if any(self._is_tabulex(widget.widget_supplier, widget.url) for widget in widgets):
             return AulaSickReportRoute.TABULEX
         return AulaSickReportRoute.NONE
 
     @staticmethod
-    def _is_tabulex(widget: AulaWidget) -> bool:
-        """Whether the widget is IST's way into Tabulex."""
-        return (widget.widget_supplier or "").casefold() == "ist" and "tabulexaulalogin" in (widget.url or "").casefold()
+    def _is_tabulex(supplier: str | None, url: str | None) -> bool:
+        """Whether a widget of `supplier` at `url` is IST's way into Tabulex."""
+        return (supplier or "").casefold() == "ist" and "tabulexaulalogin" in (url or "").casefold()
 
     async def report_sick(self, child: AulaChildProfile) -> None:
         """Report the child sick today, where its route is Aula's presence module.
@@ -1096,12 +1138,12 @@ class AulaProxyClient:
         _LOGGER.debug("Fetched newsletters: %s", len(newsletters))
         return newsletters
 
-    async def _refresh_token(self, widgetid:AulaWidgetId, force: bool = False) -> AulaToken | None:
+    async def _refresh_token(self, widgetid: str, force: bool = False) -> AulaToken | None:
         """Fetch a new token for a widget, one fetch at a time; see `_refresh_token_locked`."""
         async with self._token_refresh_lock:
             return await self._refresh_token_locked(widgetid, force)
 
-    async def _refresh_token_locked(self, widgetid:AulaWidgetId, force: bool = False) -> AulaToken | None:
+    async def _refresh_token_locked(self, widgetid: str, force: bool = False) -> AulaToken | None:
         """Fetch a new token for a widget, unless one was fetched within 5 minutes; with the lock held.
 
         Its expiry is not checked: Aula hands out tokens already expired now and then, and only

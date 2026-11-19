@@ -16,13 +16,16 @@ import itertools
 import json
 import re
 import secrets
+import socket
 import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from types import TracebackType
 from typing import Any, Self, cast
 from urllib.parse import urlencode
 
+import aiohttp
 from aiohttp import web
+from aiohttp.abc import AbstractResolver, ResolveResult
 from aiohttp.test_utils import TestServer
 from mitid_connect.testing import Network, SimulatedMitID, User
 
@@ -394,6 +397,8 @@ class SimulatedAulaApi:
         self.login = login
         """The login chain whose access tokens the API accepts too, as Aula's API accepts its own."""
         self.csrf_token = secrets.token_hex(8)
+        self.stepped_up = False
+        """Whether the login has stepped up to MitID's higher level."""
         self.widgets = ["0001", "0004", "0029"]
         self.widget_fields: dict[str, dict[str, object]] = {}
         """Aula's further fields of a widget, such as its "widgetSupplier" and "url", by its id."""
@@ -523,7 +528,14 @@ class SimulatedAulaApi:
                 return self._ok(
                     {
                         "userId": self.guardian["userId"],
-                        "institutions": [{"children": [{"id": self.child["id"], "userId": self.child["userId"]}]}],
+                        "isSteppedUp": self.stepped_up,
+                        "institutionProfile": {"role": "guardian"},
+                        "institutions": [
+                            {
+                                "institutionCode": self.child["institutionCode"],
+                                "children": [{"id": self.child["id"], "userId": self.child["userId"]}],
+                            }
+                        ],
                         "pageConfiguration": {"widgetConfigurations": widgets},
                     }
                 )
@@ -788,3 +800,156 @@ class SimulatedAulaApi:
         if not self._widget_token_valid(request):
             return web.json_response({"message": "unauthorized"}, status=401)
         return web.json_response({"personer": self.newsletters})
+
+
+class _LocalResolver(AbstractResolver):
+    """Resolves the host names given to this machine, and no other name."""
+
+    def __init__(self, hosts: Iterable[str]) -> None:
+        self.hosts = set(hosts)
+
+    async def resolve(self, host: str, port: int = 0, family: socket.AddressFamily = socket.AF_INET) -> list[ResolveResult]:
+        if host not in self.hosts:
+            raise OSError(f"{host} is not simulated")
+        return [{"hostname": host, "host": "127.0.0.1", "port": port, "family": socket.AF_INET, "proto": 0, "flags": 0}]
+
+    async def close(self) -> None:
+        return None
+
+
+class SimulatedTabulex:
+    """IST's login from Aula into Tabulex's parent portal, on a local test server under made-up host names.
+
+    The widget's address takes the form Aula's portal posts, checks its Aula token, and redirects
+    to the identity provider, which sets its session cookie and answers with a form it submits by
+    itself to the parent portal. The portal takes it, sets its own cookie, and redirects to its
+    page, which loads scripts of its own site and of another. Use it as an async context
+    manager, reached through `session()`.
+    """
+
+    IDP = "saml.borger.tabulex.test"
+    PORTAL = "foraeldre.tabulex.test"
+    ELSEWHERE = "login.elsewhere.test"
+    DOMAINS = ("tabulex.test",)
+    """The domains a probe of the simulated chain follows."""
+    SCRIPT = 'angular.module("fravaer").service("api", function ($http) { return $http.get("/api/fravaer"); });'
+    """The text of the portal's own script."""
+
+    def __init__(self, aula: SimulatedAulaApi) -> None:
+        """A chain that takes the widget tokens `aula` hands out."""
+        self.aula = aula
+        self.leave_to_elsewhere = False
+        """Whether the identity provider sends the browser to a host outside Tabulex's."""
+        self.needs_javascript = False
+        """Whether the identity provider answers with a page that needs JavaScript, in place of its form."""
+        self.loops = False
+        """Whether the identity provider redirects to itself for ever."""
+        self.assertion = secrets.token_hex(16)
+        self.idp_session = secrets.token_hex(8)
+        self.portal_session = secrets.token_hex(8)
+        self.forms: list[dict[str, str]] = []
+        """Each form posted to the widget's address."""
+        self.requests: list[str] = []
+        """The host and path of each request, in order."""
+        self._server: TestServer | None = None
+        self.app = web.Application()
+        self.app.add_routes([web.route("*", "/{path:.*}", self._handle)])
+
+    async def __aenter__(self) -> Self:
+        self._server = TestServer(self.app)
+        await self._server.start_server(access_log=None)
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        if self._server is not None:
+            await self._server.close()
+
+    def _base(self, host: str) -> str:
+        assert self._server is not None, "use the simulated Tabulex as an async context manager"
+        return f"http://{host}:{self._server.make_url('').port}"
+
+    @property
+    def widget_url(self) -> str:
+        """The address of Aula's Tabulex widget."""
+        return f"{self._base(self.IDP)}/simplesaml/module.php/tabulexaulalogin/aula.php?appid=made-up-app"
+
+    @property
+    def widget(self) -> dict[str, object]:
+        """Aula's further fields of its Tabulex widget."""
+        return {"widgetSupplier": "IST", "type": "sso", "isSecure": True, "url": self.widget_url}
+
+    @property
+    def portal(self) -> str:
+        """The address of the parent portal."""
+        return f"{self._base(self.PORTAL)}/"
+
+    def session(self) -> aiohttp.ClientSession:
+        """A session that reaches the simulated hosts on this machine, and no other host."""
+        return aiohttp.ClientSession(connector=aiohttp.TCPConnector(resolver=_LocalResolver({self.IDP, self.PORTAL, self.ELSEWHERE})))
+
+    async def _handle(self, request: web.Request) -> web.StreamResponse:
+        host = request.host.split(":")[0]
+        self.requests.append(f"{host}{request.path}")
+        if host == self.IDP:
+            return await self._idp(request)
+        if host == self.PORTAL:
+            return await self._portal(request)
+        return web.Response(text="<p>Somewhere else</p>", content_type="text/html")
+
+    async def _idp(self, request: web.Request) -> web.StreamResponse:
+        prp = "/simplesaml/module.php/adfs/idp/prp.php"
+        if request.method == "POST" and request.path.endswith("/tabulexaulalogin/aula.php"):
+            form = {name: str(value) for name, value in (await request.post()).items()}
+            names = {"sessionUUID", "isMobileApp", "aulaToken", "assuranceLevel", "userProfile", "childFilter", "institutionFilter", "group", "currentWeekNumber"}
+            if (
+                request.query.get("appid") != "made-up-app"
+                or set(form) != names
+                or form["aulaToken"] not in self.aula.widget_tokens
+                or form["isMobileApp"] != "false"
+                or form["assuranceLevel"] not in ("2", "3")
+            ):
+                return web.Response(text="<p>Der skete en fejl</p>", content_type="text/html", status=400)
+            self.forms.append(form)
+            response = web.Response(status=302, headers={"Location": f"{prp}?wa=wsignin1.0&wtrealm={self.portal}&wctx=rm%3d0"})
+            response.set_cookie("SimpleSAMLCitizenSessionID", self.idp_session, domain="tabulex.test", path="/")
+            return response
+        if request.path == prp and request.cookies.get("SimpleSAMLCitizenSessionID") == self.idp_session:
+            if self.loops:
+                return web.Response(status=302, headers={"Location": f"{prp}?again=1"})
+            if self.leave_to_elsewhere:
+                return web.Response(status=302, headers={"Location": f"{self._base(self.ELSEWHERE)}/login?SAMLRequest={self.assertion}"})
+            if self.needs_javascript:
+                return web.Response(text='<div id="login"></div><script src="/login.js"></script>', content_type="text/html")
+            fields = {"wa": "wsignin1.0", "wresult": self.assertion, "wctx": "rm=0"}
+            inputs = "".join(f'<input type="hidden" name="{name}" value="{value}"/>' for name, value in fields.items())
+            return web.Response(
+                text=f'<html><body onload="document.forms[0].submit()"><form method="post" action="{self.portal}">{inputs}'
+                '<noscript><button type="submit">Fortsæt</button></noscript></form></body></html>',
+                content_type="text/html",
+            )
+        return web.Response(text="<p>Der skete en fejl</p>", content_type="text/html", status=403)
+
+    async def _portal(self, request: web.Request) -> web.StreamResponse:
+        signed_in = request.cookies.get("FedAuth") == self.portal_session
+        if request.method == "POST" and request.path == "/":
+            form = await request.post()
+            if form.get("wa") != "wsignin1.0" or form.get("wresult") != self.assertion:
+                return web.Response(status=400)
+            response = web.Response(status=302, headers={"Location": "/"})
+            response.set_cookie("FedAuth", self.portal_session, path="/", httponly=True)
+            return response
+        if not signed_in:
+            return web.Response(status=302, headers={"Location": f"{self._base(self.IDP)}/simplesaml/module.php/adfs/idp/prp.php?wa=wsignin1.0"})
+        if request.path == "/":
+            port = self._base(self.PORTAL).rsplit(":", 1)[1]
+            scripts = (
+                f'<script src="/scripts/app.js?v={self.portal_session}"></script><script src="/scripts/gone.js"></script>'
+                f'<script src="http://{self.PORTAL}:1/closed.js"></script><script src="https://cdn.elsewhere.test/lib.js"></script>'
+                f'<script src="http://{self.PORTAL}:{port}/scripts/app.js?v={self.portal_session}"></script><script>var signedIn = true;</script>'
+            )
+            return web.Response(text=f"<html><head>{scripts}</head><body><p>Fravær for Alma</p></body></html>", content_type="text/html")
+        if request.path == "/scripts/app.js":
+            return web.Response(text=self.SCRIPT, content_type="application/javascript")
+        return web.Response(status=404)

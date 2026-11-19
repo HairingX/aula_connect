@@ -72,6 +72,16 @@ not send is refused with `ValueError`, before anything is sent.
 - **Messages.** `threads_about(child)` gives the threads of the newest page that are about the
   child, the newest first; `reply(thread_id, text)` sends plain text to everyone still in a
   thread, as HTML paragraphs, at most 6600 characters. It never marks a thread read.
+- **Probing Tabulex's login.** `probe_tabulex()` follows, once, how IST's Tabulex logs the
+  guardian in from Aula, to learn how its parent portal works: it posts the login's Tabulex
+  widget's form as Aula's portal does on a desktop, with a new widget token, follows redirects
+  and the forms a page submits by itself, at most 15 steps and only on hosts under `ist.dk`,
+  `tabulex.dk` and `tabulex.net`, then reads the portal's page and the scripts it loads from its
+  own site. It posts nothing else. Its report, kept as `tabulex_probe`, tells each step's
+  method, host, path, the names of its query and form fields, its status, where it redirected,
+  the names and domains of the cookies set, and whether a page seemed to need JavaScript, and the
+  full text of the portal's own scripts; never a value of a token, cookie or field, nor any text
+  of a page.
 - **The child's picture.** `get_profile_picture(child)` reads the child's profile picture anew:
   its `url` expires within about an hour.
 
@@ -141,7 +151,8 @@ or a `body` that name a method or a token.
 `SimulatedAulaLogin` answers the whole login chain - Aula's OAuth, UniLogin, NemLog-in and a
 simulated MitID - and `SimulatedAulaApi` Aula's API and its widgets, with the data a test gives
 it, and keeps what the writes above change, refusing a body Aula's portal would not send as Aula
-does, with HTTP 400 and code 40. Each checks the cookies, tokens and proofs the real one checks, and takes a
+does, with HTTP 400 and code 40. `SimulatedTabulex` answers IST's and Tabulex's login chain
+under made-up host names, reached through its own `session()` only. Each checks the cookies, tokens and proofs the real one checks, and takes a
 `mitid_connect.testing.Network` that gives each answer a latency and fails a share of them, for
 stress tests.
 

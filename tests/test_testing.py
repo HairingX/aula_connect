@@ -11,7 +11,7 @@ import pytest
 
 from aula_connect.login import AulaLoginClient
 from aula_connect.login.exceptions import SAMLError
-from aula_connect.testing import APP_REDIRECT_URI, SimulatedAulaApi, SimulatedAulaLogin
+from aula_connect.testing import APP_REDIRECT_URI, SimulatedAulaApi, SimulatedAulaLogin, SimulatedTabulex, _LocalResolver
 
 BROKER = "AUTH_SESSION_ID=broker-session"
 NEMLOGIN = "SessionUuid=nemlogin-session"
@@ -187,3 +187,31 @@ def test_the_simulated_api_answers_a_write_sent_as_aulas_portal_sends_it() -> No
             return statuses
 
     assert asyncio.run(send()) == [200, 200, 200, 200]
+
+
+TABULEX_ANSWERS: list[tuple[str, str, int]] = [
+    ("GET", f"http://{SimulatedTabulex.IDP}{{port}}/simplesaml/module.php/adfs/idp/prp.php", 403),
+    ("POST", f"http://{SimulatedTabulex.PORTAL}{{port}}/", 400),
+    ("GET", f"http://{SimulatedTabulex.ELSEWHERE}{{port}}/login", 200),
+]
+
+
+@pytest.mark.parametrize(("method", "url", "status"), TABULEX_ANSWERS)
+def test_the_simulated_tabulex_refuses_a_step_without_its_session_and_answers_elsewhere(method: str, url: str, status: int) -> None:
+    async def send() -> int:
+        async with SimulatedAulaApi() as aula, SimulatedTabulex(aula) as tabulex, tabulex.session() as session:
+            port = tabulex.portal.rsplit(":", 1)[1].rstrip("/")
+            async with session.request(method, url.format(port=f":{port}"), data={"wresult": "forged"}, allow_redirects=False) as response:
+                return response.status
+
+    assert asyncio.run(send()) == status
+
+
+def test_the_simulated_tabulex_reaches_no_host_of_its_own_choosing() -> None:
+    async def send() -> None:
+        async with SimulatedAulaApi() as aula, SimulatedTabulex(aula) as tabulex, tabulex.session() as session:
+            await session.get("http://unknown.tabulex.test/")
+
+    with pytest.raises(aiohttp.ClientConnectorError):
+        asyncio.run(send())
+    assert asyncio.run(_LocalResolver([]).close()) is None

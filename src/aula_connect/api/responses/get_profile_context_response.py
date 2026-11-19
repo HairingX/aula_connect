@@ -43,6 +43,7 @@ class AulaProfileContextInstitutionProfileData(TypedDict):
     profileId: NotRequired[int|None]
     profilePicture: NotRequired[AulaProfilePictureData|None]
     relations: NotRequired[List[AulaProfileContextRelationData]|None]
+    role: NotRequired[str|None]
     shortName: NotRequired[str|None]
     uniPersonId: NotRequired[int|None]
 
@@ -73,6 +74,7 @@ class AulaProfileContextWidgetData(TypedDict):
     icon: NotRequired[str|None]
     id: NotRequired[int|None]
     name: NotRequired[str|None]
+    type: NotRequired[str|None]
     url: NotRequired[str|None]
     widgetId: NotRequired[str|None]
     widgetSupplier: NotRequired[str|None]
@@ -93,6 +95,7 @@ class AulaProfileContextData(TypedDict):
     id: NotRequired[int|None]
     institutionProfile: NotRequired[AulaProfileContextInstitutionProfileData|None]
     institutions: NotRequired[List[AulaProfileContextInstitutionDetailsData]|None]
+    isSteppedUp: NotRequired[bool|None]
     mobilePhonenumber: NotRequired[str|None]
     pageConfiguration: AulaProfileContextPageConfigurationData
     userId: str
