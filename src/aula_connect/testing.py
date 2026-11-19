@@ -10,13 +10,16 @@ test of a login exercises how the client carries its session, not only its reque
 from __future__ import annotations
 
 import base64
+import datetime
 import hashlib
+import itertools
 import json
+import re
 import secrets
 import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from types import TracebackType
-from typing import Self
+from typing import Any, Self, cast
 from urllib.parse import urlencode
 
 from aiohttp import web
@@ -306,6 +309,16 @@ class SimulatedAulaLogin:
         return self._issue()
 
 
+def _day(value: object) -> datetime.date | None:
+    """A date written "YYYY-MM-DD", as Aula takes one; None for anything else."""
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return None
+    try:
+        return datetime.date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 def _jwt(lifetime: float = 3600) -> str:
     def part(value: dict[str, object]) -> str:
         return base64.urlsafe_b64encode(json.dumps(value).encode()).decode().rstrip("=")
@@ -382,6 +395,8 @@ class SimulatedAulaApi:
         """The login chain whose access tokens the API accepts too, as Aula's API accepts its own."""
         self.csrf_token = secrets.token_hex(8)
         self.widgets = ["0001", "0004", "0029"]
+        self.widget_fields: dict[str, dict[str, object]] = {}
+        """Aula's further fields of a widget, such as its "widgetSupplier" and "url", by its id."""
         self.guardian = {"profileId": 201, "displayName": "Pat Example", "userId": "pat"}
         self.institution = {"id": 21, "institutionCode": "S1", "institutionName": "School"}
         self.child = {
@@ -404,6 +419,17 @@ class SimulatedAulaApi:
         self.weekly_plans: list[dict[str, object]] = []
         self.easyiq_events: list[dict[str, object]] = []
         self.newsletters: list[dict[str, object]] = []
+        self.presence_modules: dict[str, str] = {"report_sick": "editable", "vacation": "editable"}
+        """The permission of each part of the presence module on the guardian's dashboard, by its name, for the child."""
+        self.presence_statuses: dict[int, int] = {}
+        """The status each child was reported to have today, by its institution profile id, over its daily overview's."""
+        self.vacations: list[dict[str, object]] = []
+        """The vacations registered: Aula's fields of each, and "childIds", the children it is for."""
+        self.vacation_requests: list[dict[str, object]] = []
+        """The institution's vacation requests: Aula's listed fields of each, such as "responseId", and "childId"."""
+        self.vacation_answers: dict[int, dict[str, object]] = {}
+        """The answer to each vacation request, its "comment" and "days", by its "responseId"."""
+        self._ids = itertools.count(9001)
         self.widget_tokens: set[str] = set()
         self.widget_token_lifetime = 3600.0
         """Seconds a widget token is valid for when handed out; Aula now and then hands out one expired already."""
@@ -490,7 +516,10 @@ class SimulatedAulaApi:
                 response.set_cookie("Csrfp-Token", self.csrf_token)
                 return response
             case "profiles.getProfileContext":
-                widgets = [{"id": index, "widget": {"widgetId": widget, "name": widget, "id": index}} for index, widget in enumerate(self.widgets)]
+                widgets = [
+                    {"id": index, "widget": {"widgetId": widget, "name": widget, "id": index, **self.widget_fields.get(widget, {})}}
+                    for index, widget in enumerate(self.widgets)
+                ]
                 return self._ok(
                     {
                         "userId": self.guardian["userId"],
@@ -507,7 +536,7 @@ class SimulatedAulaApi:
                     }
                 )
             case "presence.getDailyOverview":
-                return self._ok(self.daily_overviews)
+                return self._ok([self._with_status(overview) for overview in self.daily_overviews])
             case "messaging.getThreads":
                 threads = [{**self._THREAD, "institutionCode": self.child["institutionCode"], **thread} for thread in self.threads]
                 return self._ok({"moreMessagesExist": False, "page": 0, "threads": threads})
@@ -543,8 +572,203 @@ class SimulatedAulaApi:
                 token = _jwt(self.widget_token_lifetime)
                 self.widget_tokens.add(token)
                 return self._ok(token)
+            case (
+                "presence.getPresenceConfigurationByChildIds"
+                | "presence.getVacationAnnouncementsByChildren"
+                | "presence.getVacationRegistrationsByChildren"
+                | "presence.getVacationRegistrationResponse"
+            ):
+                return self._presence(method, request)
+            case (
+                "presence.updateStatusByInstitutionProfileIds"
+                | "calendar.addVacation"
+                | "calendar.deleteEvent"
+                | "calendar.respondToVacationRegistrationRequest"
+                | "messaging.reply"
+            ):
+                try:
+                    body: object = await request.json()
+                except ValueError:
+                    return self._refused()
+                return self._write(method, cast(dict[str, Any], body)) if isinstance(body, dict) else self._refused()
             case _:
                 return web.json_response({"status": {"code": 404, "message": f"Unknown method {method}"}}, status=404)
+
+    @staticmethod
+    def _refused() -> web.Response:
+        """Aula's answer to parameters or a body it does not take."""
+        return web.json_response({"status": {"code": 40, "message": ""}, "data": None}, status=400)
+
+    def _with_status(self, overview: dict[str, object]) -> dict[str, object]:
+        profile = cast(dict[str, object], overview.get("institutionProfile") or {})
+        status = self.presence_statuses.get(cast(int, profile.get("id")))
+        return overview if status is None else {**overview, "status": status}
+
+    def _child_ids(self, request: web.Request) -> list[int] | None:
+        """The children asked for, None where one is none of the account's."""
+        ids = request.query.getall("childIds[]", [])
+        if not ids or any(child_id != str(self.child["id"]) for child_id in ids):
+            return None
+        return [int(child_id) for child_id in ids]
+
+    def _request(self, response_id: object) -> dict[str, object] | None:
+        return next((found for found in self.vacation_requests if found.get("responseId") == response_id), None)
+
+    def _presence(self, method: str, request: web.Request) -> web.Response:
+        if method == "presence.getVacationRegistrationResponse":
+            found = self._request(int(request.query.get("vacationRegistrationResponseId") or 0))
+            if found is None:
+                return self._refused()
+            answer = self.vacation_answers.get(cast(int, found["responseId"]), {})
+            period = ("startDate", "endDate", "responseDeadline", "isPresenceTimesRequired")
+            return self._ok(
+                {
+                    "vacationRegistrationResponse": {
+                        "vacationRegistrationResponseId": found["responseId"],
+                        "childId": found["childId"],
+                        "comment": answer.get("comment", ""),
+                        "days": answer.get("days", []),
+                    },
+                    "vacationRegistration": {
+                        **{name: found.get(name) for name in period},
+                        "isMissingAnswer": not answer,
+                    },
+                }
+            )
+        children = self._child_ids(request)
+        if children is None:
+            return self._refused()
+        child = {name: self.child.get(name) for name in ("id", "name", "shortName")}
+        if method == "presence.getPresenceConfigurationByChildIds":
+            modules = [{"moduleType": name, "permission": permission} for name, permission in self.presence_modules.items()]
+            settings = [{"presenceDashboardContext": "guardian_dashboard", "presenceModules": modules}]
+            return self._ok([{"uniStudentId": child_id, "presenceConfiguration": {"dashboardModuleSettings": settings}} for child_id in children])
+        if method == "presence.getVacationAnnouncementsByChildren":
+            vacations = [
+                {name: value for name, value in vacation.items() if name != "childIds"}
+                for vacation in self.vacations
+                if self.child["id"] in cast(list[int], vacation["childIds"])
+            ]
+            return self._ok([{"child": child, "vacationAnnouncements": vacations}])
+        requests = [
+            {
+                **{name: value for name, value in found.items() if name != "childId"},
+                "isMissingAnswer": found["responseId"] not in self.vacation_answers,
+            }
+            for found in self.vacation_requests
+            if found.get("childId") == self.child["id"]
+        ]
+        return self._ok([{"child": child, "vacationRegistrations": requests}])
+
+    def _write(self, method: str, body: dict[str, Any]) -> web.Response:
+        """Do what a write asks, where its body is the one Aula's portal sends; refuse it otherwise."""
+        match method:
+            case "presence.updateStatusByInstitutionProfileIds":
+                status: object = body.get("status")
+                ok = set(body) == {"institutionProfileIds", "status"} and self._children(body["institutionProfileIds"])
+                if not ok or type(status) is not int or status not in (0, 1):
+                    return self._refused()
+                for child_id in cast(list[int], body["institutionProfileIds"]):
+                    self.presence_statuses[child_id] = status
+                return self._ok(None)
+            case "calendar.addVacation":
+                intervals = body.get("intervals")
+                if (
+                    set(body) != {"childIds", "intervals", "comment"}
+                    or not self._children(body["childIds"])
+                    or not isinstance(body["comment"], str)
+                    or len(body["comment"]) > 250
+                    or not isinstance(intervals, list)
+                    or len(cast(list[object], intervals)) != 1
+                ):
+                    return self._refused()
+                [interval] = cast(list[object], intervals)
+                if not isinstance(interval, dict) or set(cast(dict[str, object], interval)) != {"startDate", "endDate"}:
+                    return self._refused()
+                start, end = (_day(cast(dict[str, object], interval)[name]) for name in ("startDate", "endDate"))
+                if start is None or end is None or end < start:
+                    return self._refused()
+                self.vacations.append(
+                    {
+                        "vacationId": next(self._ids),
+                        "startDate": start.isoformat(),
+                        "endDate": end.isoformat(),
+                        "description": body["comment"],
+                        "isEditable": True,
+                        "childIds": list(cast(list[int], body["childIds"])),
+                    }
+                )
+                return self._ok(None)
+            case "calendar.deleteEvent":
+                found = [vacation for vacation in self.vacations if set(body) == {"id"} and vacation["vacationId"] == body["id"]]
+                if not found:
+                    return self._refused()
+                self.vacations.remove(found[0])
+                return self._ok(None)
+            case "calendar.respondToVacationRegistrationRequest":
+                found = self._request(body.get("vacationRegistrationResponseId"))
+                if (
+                    found is None
+                    or set(body) != {"vacationRegistrationResponseId", "childId", "days", "comment"}
+                    or body["childId"] != found["childId"]
+                    or not isinstance(body["comment"], str)
+                    or not isinstance(body["days"], list)
+                    or not body["days"]
+                    or not all(self._answered_day(found, day) for day in cast(list[object], body["days"]))
+                ):
+                    return self._refused()
+                self.vacation_answers[cast(int, found["responseId"])] = {"comment": body["comment"], "days": body["days"]}
+                return self._ok(None)
+            case _:
+                return self._reply(body)
+
+    def _children(self, ids: object) -> bool:
+        """Whether `ids` is a list of the account's children's institution profile ids."""
+        if not isinstance(ids, list):
+            return False
+        found = cast(list[object], ids)
+        return bool(found) and all(child_id == self.child["id"] for child_id in found)
+
+    @staticmethod
+    def _answered_day(request: dict[str, object], day: object) -> bool:
+        """Whether `day` is a day of the request answered as Aula's portal answers it."""
+        if not isinstance(day, dict) or set(cast(dict[str, object], day)) != {"date", "isComing", "entryTime", "exitTime"}:
+            return False
+        answer = cast(dict[str, object], day)
+        on = _day(answer["date"])
+        start, end = _day(request.get("startDate")), _day(request.get("endDate"))
+        if on is None or start is None or end is None or not start <= on <= end or on.weekday() >= 5:
+            return False
+        if not isinstance(answer["isComing"], bool):
+            return False
+        times = (answer["entryTime"], answer["exitTime"])
+        if answer["isComing"] and request.get("isPresenceTimesRequired"):
+            clock = re.compile(r"[0-2][0-9]:[0-5][0-9]")
+            return all(isinstance(at, str) and clock.fullmatch(at) for at in times) and str(times[0]) < str(times[1])
+        return times == ("", "")
+
+    def _reply(self, body: dict[str, Any]) -> web.Response:
+        message = body.get("message")
+        thread = next((found for found in self.threads if found.get("id") == body.get("threadId")), None)
+        if (
+            thread is None
+            or set(body) != {"threadId", "message", "commonInboxId", "otpInboxId"}
+            or body["commonInboxId"] is not None
+            or body["otpInboxId"] is not None
+            or not isinstance(message, dict)
+            or set(cast(dict[str, object], message)) != {"text", "attachmentIds"}
+            or cast(dict[str, object], message)["attachmentIds"] != []
+        ):
+            return self._refused()
+        text = cast(dict[str, object], message)["text"]
+        if not isinstance(text, str) or len(text) > 10000 or not 0 < len(re.sub(r"<[^>]*>", "", text).strip()) <= 6600:
+            return self._refused()
+        sent = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
+        sender = {"answerDirectlyName": self.guardian["displayName"], "fullName": self.guardian["displayName"], "metadata": ""}
+        reply: dict[str, object] = {"id": f"r{next(self._ids)}", "messageType": "Message", "sendDateTime": sent, "sender": sender, "text": {"html": text}}
+        self.messages.setdefault(cast(int, thread["id"]), []).append(reply)
+        thread["latestMessage"] = {"id": reply["id"], "sendDateTime": sent, "text": {"html": text}}
+        return self._ok([reply])
 
     async def _meebook(self, request: web.Request) -> web.Response:
         self.requests.append("meebook")

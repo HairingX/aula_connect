@@ -4,6 +4,7 @@ wrongly fails its tests."""
 from __future__ import annotations
 
 import asyncio
+import json
 
 import aiohttp
 import pytest
@@ -71,3 +72,118 @@ def test_the_simulated_api_refuses_a_request_without_its_tokens(method: str, pat
                 return response.status
 
     assert asyncio.run(send()) == status
+
+
+MONDAY = "2026-12-28"
+REQUEST: dict[str, object] = {
+    "responseId": 501, "childId": 11, "startDate": MONDAY, "endDate": "2027-01-03", "isPresenceTimesRequired": True,
+}
+DAY: dict[str, object] = {"date": MONDAY, "isComing": True, "entryTime": "08:00", "exitTime": "15:00"}
+ANSWER: dict[str, object] = {"vacationRegistrationResponseId": 501, "childId": 11, "days": [DAY], "comment": ""}
+VACATION: dict[str, object] = {"childIds": [11], "intervals": [{"startDate": MONDAY, "endDate": MONDAY}], "comment": ""}
+REPLY: dict[str, object] = {"threadId": 7, "message": {"text": "<p>Hej</p>", "attachmentIds": []}, "commonInboxId": None, "otpInboxId": None}
+
+WRITE_REFUSALS: list[tuple[str, object]] = [
+    ("presence.updateStatusByInstitutionProfileIds", {"institutionProfileIds": [11], "status": 3}),
+    ("presence.updateStatusByInstitutionProfileIds", {"institutionProfileIds": [11], "status": True}),
+    ("presence.updateStatusByInstitutionProfileIds", {"institutionProfileIds": [12], "status": 1}),
+    ("presence.updateStatusByInstitutionProfileIds", {"institutionProfileIds": 11, "status": 1}),
+    ("presence.updateStatusByInstitutionProfileIds", {"institutionProfileIds": [11], "status": 1, "date": MONDAY}),
+    ("presence.updateStatusByInstitutionProfileIds", [11]),
+    ("presence.updateStatusByInstitutionProfileIds", "not json"),
+    ("calendar.addVacation", {**VACATION, "childIds": []}),
+    ("calendar.addVacation", {**VACATION, "comment": "x" * 251}),
+    ("calendar.addVacation", {**VACATION, "comment": None}),
+    ("calendar.addVacation", {**VACATION, "intervals": [{"startDate": MONDAY, "endDate": MONDAY}] * 2}),
+    ("calendar.addVacation", {**VACATION, "intervals": [MONDAY]}),
+    ("calendar.addVacation", {**VACATION, "intervals": [{"startDate": MONDAY}]}),
+    ("calendar.addVacation", {**VACATION, "intervals": [{"startDate": "2026-12-28T00:00:00", "endDate": MONDAY}]}),
+    ("calendar.addVacation", {**VACATION, "intervals": [{"startDate": "2027-02-30", "endDate": "2027-02-30"}]}),
+    ("calendar.addVacation", {**VACATION, "intervals": [{"startDate": MONDAY, "endDate": "2026-12-27"}]}),
+    ("calendar.addVacation", {"childIds": [11], "intervals": [{"startDate": MONDAY, "endDate": MONDAY}]}),
+    ("calendar.deleteEvent", {"id": 9001, "occurrenceDateTime": None}),
+    ("calendar.deleteEvent", {"id": 1}),
+    ("calendar.respondToVacationRegistrationRequest", {**ANSWER, "vacationRegistrationResponseId": 502}),
+    ("calendar.respondToVacationRegistrationRequest", {**ANSWER, "childId": 12}),
+    ("calendar.respondToVacationRegistrationRequest", {**ANSWER, "comment": None}),
+    ("calendar.respondToVacationRegistrationRequest", {**ANSWER, "days": []}),
+    ("calendar.respondToVacationRegistrationRequest", {**ANSWER, "days": [MONDAY]}),
+    ("calendar.respondToVacationRegistrationRequest", {**ANSWER, "days": [{"date": MONDAY, "isComing": False}]}),
+    ("calendar.respondToVacationRegistrationRequest", {**ANSWER, "days": [{**DAY, "date": "2027-01-02"}]}),
+    ("calendar.respondToVacationRegistrationRequest", {**ANSWER, "days": [{**DAY, "date": "2027-01-04"}]}),
+    ("calendar.respondToVacationRegistrationRequest", {**ANSWER, "days": [{**DAY, "isComing": None}]}),
+    ("calendar.respondToVacationRegistrationRequest", {**ANSWER, "days": [{**DAY, "isComing": False}]}),
+    ("calendar.respondToVacationRegistrationRequest", {**ANSWER, "days": [{**DAY, "exitTime": ""}]}),
+    ("calendar.respondToVacationRegistrationRequest", {**ANSWER, "days": [{**DAY, "entryTime": "8:00"}]}),
+    ("calendar.respondToVacationRegistrationRequest", {**ANSWER, "days": [{**DAY, "entryTime": "16:00"}]}),
+    ("calendar.respondToVacationRegistrationRequest", {"vacationRegistrationResponseId": 501, "childId": 11, "days": [DAY]}),
+    ("messaging.reply", {**REPLY, "threadId": 8}),
+    ("messaging.reply", {**REPLY, "commonInboxId": 1}),
+    ("messaging.reply", {**REPLY, "otpInboxId": 1}),
+    ("messaging.reply", {**REPLY, "message": "<p>Hej</p>"}),
+    ("messaging.reply", {**REPLY, "message": {"text": "<p>Hej</p>"}}),
+    ("messaging.reply", {**REPLY, "message": {"text": "<p>Hej</p>", "attachmentIds": [1]}}),
+    ("messaging.reply", {**REPLY, "message": {"text": "<p> </p>", "attachmentIds": []}}),
+    ("messaging.reply", {**REPLY, "message": {"text": 1, "attachmentIds": []}}),
+    ("messaging.reply", {**REPLY, "message": {"text": "x" * 6601, "attachmentIds": []}}),
+    ("messaging.reply", {**REPLY, "message": {"text": "<br>" * 2500, "attachmentIds": []}}),
+    ("messaging.reply", {**REPLY, "sensitive": False}),
+]
+
+
+def _simulated(aula: SimulatedAulaApi) -> None:
+    aula.vacation_requests = [REQUEST]
+    aula.vacations = [{"vacationId": 9001, "startDate": MONDAY, "endDate": MONDAY, "isEditable": True, "childIds": [11]}]
+    aula.threads = [{"id": 7}]
+
+
+@pytest.mark.parametrize(("method", "body"), WRITE_REFUSALS)
+def test_the_simulated_api_refuses_a_write_not_sent_as_aulas_portal_sends_it(method: str, body: object) -> None:
+    async def send() -> tuple[int, object]:
+        async with SimulatedAulaApi() as aula, aiohttp.ClientSession() as session:
+            _simulated(aula)
+            url = f"{aula.url}/api/v{aula.VERSION}?method={method}&access_token=access"
+            data = body if isinstance(body, str) else json.dumps(body)
+            async with session.post(url, data=data, headers={"csrfp-token": aula.csrf_token}) as response:
+                return response.status, (await response.json())["status"]["code"]
+
+    assert asyncio.run(send()) == (400, 40)
+
+
+READ_REFUSALS = [
+    "presence.getPresenceConfigurationByChildIds",
+    "presence.getVacationAnnouncementsByChildren&childIds[]=12",
+    "presence.getVacationRegistrationsByChildren&childIds[]=11&childIds[]=x",
+    "presence.getVacationRegistrationResponse&vacationRegistrationResponseId=502",
+    "presence.getVacationRegistrationResponse",
+]
+
+
+@pytest.mark.parametrize("query", READ_REFUSALS)
+def test_the_simulated_api_refuses_a_read_of_no_child_or_request_of_the_account(query: str) -> None:
+    async def send() -> tuple[int, object]:
+        async with SimulatedAulaApi() as aula, aiohttp.ClientSession() as session:
+            _simulated(aula)
+            async with session.get(f"{aula.url}/api/v{aula.VERSION}?method={query}&access_token=access") as response:
+                return response.status, (await response.json())["status"]["code"]
+
+    assert asyncio.run(send()) == (400, 40)
+
+
+def test_the_simulated_api_answers_a_write_sent_as_aulas_portal_sends_it() -> None:
+    async def send() -> list[int]:
+        async with SimulatedAulaApi() as aula, aiohttp.ClientSession() as session:
+            _simulated(aula)
+            statuses: list[int] = []
+            for method, body in [
+                ("calendar.respondToVacationRegistrationRequest", {**ANSWER, "days": [{**DAY, "isComing": False, "entryTime": "", "exitTime": ""}]}),
+                ("calendar.respondToVacationRegistrationRequest", ANSWER),
+                ("calendar.deleteEvent", {"id": 9001}),
+                ("messaging.reply", REPLY),
+            ]:
+                url = f"{aula.url}/api/v{aula.VERSION}?method={method}&access_token=access"
+                async with session.post(url, json=body, headers={"csrfp-token": aula.csrf_token}) as response:
+                    statuses.append(response.status)
+            return statuses
+
+    assert asyncio.run(send()) == [200, 200, 200, 200]

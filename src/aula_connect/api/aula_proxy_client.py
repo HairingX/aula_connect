@@ -8,8 +8,9 @@ import asyncio
 from dataclasses import dataclass
 from http import HTTPStatus
 import aiohttp
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, cast
-from datetime import datetime, timedelta, date, timezone
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Sequence, cast
+from datetime import datetime, time, timedelta, date, timezone
+import html
 import json
 import logging
 from ..anomaly import Anomaly, AnomalyKind
@@ -20,6 +21,8 @@ from ..redact import redact
 from .aula_errors import AulaCredentialError, AulaApiError, ParseError
 from .models.constants import AulaWidgetId
 from .models.aula_notification_models import NotificationArea
+from .aula_errors import NoSickReportRouteError, SickReportRouteNotSupportedError
+from .models.aula_parser import now
 from .models.module import (
     AULA_NOTIFICATION_TYPES,
     AulaBirthdayEvent,
@@ -41,7 +44,18 @@ from .models.module import (
     AulaNotificationParser,
     AulaProfile,
     AulaProfileParser,
+    AulaPresenceConfiguration,
+    AulaPresenceModuleType,
+    AulaPresenceParser,
+    AulaPresenceStatus,
+    AulaProfilePicture,
+    AulaSickReportRoute,
     AulaToken,
+    AulaVacation,
+    AulaVacationDay,
+    AulaVacationParser,
+    AulaVacationRequest,
+    AulaVacationRequestDetail,
     AulaWeeklyNewsletter,
     AulaWeeklyPlan,
     AulaWeeklyPlanParser,
@@ -73,6 +87,43 @@ tokens cannot be relied on, as it is now and then already past when it hands one
 RECOVERY_COOLDOWN = timedelta(minutes=10)
 """The least time between two recoveries of a widget token. During an outage at Aula, recovering
 again only churns its token endpoint."""
+VACATION_COMMENT_MAX_LENGTH = 250
+"""The longest comment of a vacation Aula's portal lets a guardian write."""
+MESSAGE_MAX_LENGTH = 6600
+"""The longest message Aula's portal lets a user send, in characters without its HTML's tags."""
+MESSAGE_HTML_MAX_LENGTH = 10000
+"""The longest message Aula's portal lets a user send, in characters of its HTML."""
+
+
+def _message_html(text: str) -> str:
+    """`text` as HTML: a paragraph for each run of lines between blank lines, a line break within one.
+
+    Raises:
+        ValueError: The text is empty, or longer than Aula takes.
+    """
+    paragraphs = [
+        "<br>".join(html.escape(line.strip(), quote=False) for line in block.strip().splitlines())
+        for block in re.split(r"\n\s*\n", text.strip())
+    ]
+    markup = "".join(f"<p>{paragraph}</p>" for paragraph in paragraphs if paragraph)
+    if not markup:
+        raise ValueError("The message is empty")
+    without_tags = len(re.sub(r"<[^>]*>", "", markup))
+    if without_tags > MESSAGE_MAX_LENGTH or len(markup) > MESSAGE_HTML_MAX_LENGTH:
+        raise ValueError(f"The message is longer than Aula takes: {MESSAGE_MAX_LENGTH} characters")
+    return markup
+
+
+def _one_year_after(day: date) -> date:
+    """The same day a year later; the 28th of February for the 29th."""
+    if (day.month, day.day) == (2, 29):
+        return date(day.year + 1, 2, 28)
+    return day.replace(year=day.year + 1)
+
+
+def _clock(value: time) -> str:
+    """A time of day as Aula takes it, "HH:MM"."""
+    return value.strftime("%H:%M")
 
 
 def _area_name(area: object) -> str:
@@ -138,20 +189,21 @@ class _TokenSession(HttpSession):
         """The access token sent with every request of the Aula API."""
         return self._access_token
 
-    async def request(self, method: str, url: str, **kwargs: Any) -> HttpResponse:
-        """Send a request, with the access token where it is one of the Aula API, and record it."""
+    async def request(self, method: str, url: str, *, record: bool = True, **kwargs: Any) -> HttpResponse:
+        """Send a request, with the access token where it is one of the Aula API, and record it where `record`."""
         sent = url
         if self._access_token and self.api_base in url:
             separator = "&" if "?" in url else "?"
             sent = f"{url}{separator}access_token={self._access_token}"
+        recorder = self.recorder if record else None
         try:
             response = await super().request(method, sent, **kwargs)
         except Exception as error:
-            if self.recorder is not None:
-                self.recorder.record_error(method, url, kwargs.get("params"), kwargs.get("json"), error)
+            if recorder is not None:
+                recorder.record_error(method, url, kwargs.get("params"), kwargs.get("json"), error)
             raise
-        if self.recorder is not None:
-            self.recorder.record(method, url, kwargs.get("params"), kwargs.get("json"), response)
+        if recorder is not None:
+            recorder.record(method, url, kwargs.get("params"), kwargs.get("json"), response)
         if self.on_answer is not None:
             self.on_answer(method, url, response)
         return response
@@ -536,10 +588,7 @@ class AulaProxyClient:
     async def get_calendar_events(self, profiles: List[AulaInstitutionProfile], start_datetime: datetime, end_datetime: datetime) -> List[AulaCalendarEvent]:
         """The calendar events of the institution profiles from `start_datetime` to `end_datetime`."""
         if len(profiles) == 0: return []
-        headers: Dict[str, str] = {"content-type": "application/json"}
-        csrf_token = self._get_csrf_token()
-        if csrf_token:
-            headers["csrfp-token"] = csrf_token
+        headers = self._json_headers()
         post_data: Dict[str, Any] = {
             "instProfileIds": list(set(profile.id for profile in profiles)),
             "resourceIds": [],
@@ -626,6 +675,267 @@ class AulaProxyClient:
                 self._note(AnomalyKind.UNKNOWN_NOTIFICATION_AREA, _area_name(area))
         _LOGGER.debug("Fetched notifications: %s", len(notifications))
         return notifications
+
+    def _json_headers(self) -> Dict[str, str]:
+        """The headers of a request with a JSON body, with the CSRF token Aula wants with every POST."""
+        headers: Dict[str, str] = {"content-type": "application/json"}
+        csrf_token = self._get_csrf_token()
+        if csrf_token:
+            headers["csrfp-token"] = csrf_token
+        return headers
+
+    async def _get[T](self, api_method: str, what: str, query: str, parser: Callable[[Any], T], empty: T) -> T:
+        """Aula's answer to GET `api_method` with `query` read by `parser`; `empty` where it answered with no content.
+
+        Raises:
+            AulaCredentialError, PermissionError, AulaApiError: Aula refused the request.
+            ParseError: The answer could not be read.
+        """
+        url = f"{self._apiurl}?method={api_method}{query}"
+        data = await self._read(api_method, what, lambda: self._session.get(url))
+        if data is None: return empty
+        return self._parse(what, parser, data)
+
+    async def _write(self, api_method: str, body: Dict[str, Any]) -> None:
+        """POST `body` to `api_method`, once.
+
+        A write is never sent again after a failure of the network or of Aula's server, as Aula
+        may have done it; only once more where Aula refused the access token, once it is renewed.
+        It is not recorded, as it may hold what the user wrote.
+
+        Raises:
+            AulaCredentialError, PermissionError, AulaApiError: Aula refused it.
+            ConnectionError: The access token could not be renewed, or Aula refused it once
+                renewed, or the network failed when it was sent again.
+            aiohttp.ClientError, TimeoutError: The network failed.
+        """
+        url = f"{self._apiurl}?method={api_method}"
+
+        def send() -> Awaitable[HttpResponse]:
+            return self._session.post(url, json=body, headers=self._json_headers(), record=False)
+
+        response = await self._retry_on_401(await send(), send)
+        _LOGGER.debug("%s: HTTP %s", api_method, response.status_code)
+        self._raise_error(response)
+
+    @staticmethod
+    def _child_ids(children: Iterable[AulaChildProfile], name: str = "childIds[]") -> str:
+        """The children's institution profile ids as a query's parameters, each once."""
+        return "".join(f"&{name}={child_id}" for child_id in dict.fromkeys(child.id for child in children))
+
+    async def get_presence_configurations(self, children: List[AulaChildProfile]) -> List[AulaPresenceConfiguration]:
+        """What the children's guardian may see and do in the presence module, for each child Aula tells it of."""
+        if not children: return []
+        return await self._get(
+            "presence.getPresenceConfigurationByChildIds", "presence configurations", self._child_ids(children),
+            AulaPresenceParser.parse_response, [],
+        )
+
+    async def get_sick_report_route(self, child: AulaChildProfile) -> AulaSickReportRoute:
+        """Where the child is reported sick.
+
+        In Aula's presence module where the guardian's dashboard may change the part `report_sick`;
+        else through IST's Tabulex, where the login has its widget; else nowhere known.
+        """
+        configurations = await self.get_presence_configurations([child])
+        if any(found.child_id == child.id and found.editable(AulaPresenceModuleType.REPORT_SICK) for found in configurations):
+            return AulaSickReportRoute.AULA
+        widgets = [] if self._login_result is None else self._login_result.widgets
+        if any(self._is_tabulex(widget) for widget in widgets):
+            return AulaSickReportRoute.TABULEX
+        return AulaSickReportRoute.NONE
+
+    @staticmethod
+    def _is_tabulex(widget: AulaWidget) -> bool:
+        """Whether the widget is IST's way into Tabulex."""
+        return (widget.widget_supplier or "").casefold() == "ist" and "tabulexaulalogin" in (widget.url or "").casefold()
+
+    async def report_sick(self, child: AulaChildProfile) -> None:
+        """Report the child sick today, where its route is Aula's presence module.
+
+        Aula takes the report back by itself the next day.
+
+        Raises:
+            SickReportRouteNotSupportedError: The child is reported sick through Tabulex.
+            NoSickReportRouteError: No way is known to report the child sick.
+        """
+        await self._update_sick_status(child, AulaPresenceStatus.SICK)
+
+    async def undo_sick(self, child: AulaChildProfile) -> None:
+        """Take back today's report that the child is sick, where its route is Aula's presence module.
+
+        Raises:
+            ValueError: Aula does not tell the child as sick today.
+            SickReportRouteNotSupportedError: The child is reported sick through Tabulex.
+            NoSickReportRouteError: No way is known to report the child sick.
+        """
+        overviews = await self._get(
+            "presence.getDailyOverview", "daily overviews", self._child_ids([child]),
+            AulaProfileParser.parse_daily_overview_response, [],
+        )
+        if not any(overview.institution_profile.id == child.id and overview.status == AulaPresenceStatus.SICK for overview in overviews):
+            raise ValueError("The child is not reported sick today")
+        await self._update_sick_status(child, AulaPresenceStatus.NOT_PRESENT)
+
+    async def _update_sick_status(self, child: AulaChildProfile, status: AulaPresenceStatus) -> None:
+        route = await self.get_sick_report_route(child)
+        if route is AulaSickReportRoute.TABULEX:
+            raise SickReportRouteNotSupportedError("IST Tabulex")
+        if route is AulaSickReportRoute.NONE:
+            raise NoSickReportRouteError("No way is known to report the child sick")
+        await self._write("presence.updateStatusByInstitutionProfileIds", {"institutionProfileIds": [child.id], "status": int(status)})
+
+    async def get_vacations(self, children: List[AulaChildProfile]) -> List[AulaVacation]:
+        """The vacations and time off registered for the children."""
+        if not children: return []
+        return await self._get(
+            "presence.getVacationAnnouncementsByChildren", "vacations", self._child_ids(children),
+            AulaVacationParser.parse_vacations_response, [],
+        )
+
+    async def add_vacation(self, children: List[AulaChildProfile], start: date, end: date, comment: str = "") -> None:
+        """Register a vacation or time off for the children, from `start` to `end`, both included.
+
+        The rules are those of Aula's portal: the start is today or later, in the institution's
+        time zone; the end is not before the start, and at most a year after it; the comment is
+        at most VACATION_COMMENT_MAX_LENGTH characters.
+
+        Raises:
+            ValueError: No child is given, or a rule is broken.
+        """
+        if not children:
+            raise ValueError("No child is given")
+        today = now().date()
+        if start < today:
+            raise ValueError(f"The vacation starts before today, {today.isoformat()}")
+        if end < start:
+            raise ValueError("The vacation ends before it starts")
+        if end > _one_year_after(start):
+            raise ValueError("The vacation ends more than a year after it starts")
+        if len(comment) > VACATION_COMMENT_MAX_LENGTH:
+            raise ValueError(f"The comment is longer than {VACATION_COMMENT_MAX_LENGTH} characters")
+        body: Dict[str, Any] = {
+            "childIds": list(dict.fromkeys(child.id for child in children)),
+            "intervals": [{"startDate": start.isoformat(), "endDate": end.isoformat()}],
+            "comment": comment,
+        }
+        await self._write("calendar.addVacation", body)
+
+    async def delete_vacation(self, vacation_id: int) -> None:
+        """Delete the vacation `vacation_id` of one of the login's children.
+
+        Raises:
+            ValueError: No vacation of the login's children has the id, or it cannot be changed.
+        """
+        children = [] if self._login_result is None else self.flatten_children(self._login_result.profiles)
+        found = [vacation for vacation in await self.get_vacations(children) if vacation.id == vacation_id]
+        if not found:
+            raise ValueError("No vacation of the children has the id")
+        if not all(vacation.is_editable for vacation in found):
+            raise ValueError("The vacation cannot be changed")
+        await self._write("calendar.deleteEvent", {"id": vacation_id})
+
+    async def get_vacation_requests(self, children: List[AulaChildProfile]) -> List[AulaVacationRequest]:
+        """The institutions' requests to say whether the children come, answered or not."""
+        if not children: return []
+        return await self._get(
+            "presence.getVacationRegistrationsByChildren", "vacation requests", self._child_ids(children),
+            AulaVacationParser.parse_requests_response, [],
+        )
+
+    async def get_vacation_request(self, response_id: int) -> AulaVacationRequestDetail | None:
+        """The vacation request `response_id` with its answer as it stands; None where Aula answered with no content."""
+        parser: Callable[[Any], AulaVacationRequestDetail | None] = AulaVacationParser.parse_request_response
+        return await self._get(
+            "presence.getVacationRegistrationResponse", "vacation request", f"&vacationRegistrationResponseId={response_id}",
+            parser, None,
+        )
+
+    async def answer_vacation_request(self, response_id: int, days: Sequence[AulaVacationDay], comment: str = "") -> None:
+        """Answer the vacation request `response_id`: for each of `days`, whether the child comes.
+
+        A day is a weekday of the request's period, today or later, and answered once. A day the
+        child comes on has its entry and exit times where the request asks for them, the entry
+        first; other times are not sent. The request is read first, and answered while its
+        deadline has not passed; an answer given already is replaced.
+
+        Raises:
+            ValueError: Aula tells nothing of the request, its deadline has passed, or a day
+                breaks a rule.
+        """
+        request = await self.get_vacation_request(response_id)
+        if request is None:
+            raise ValueError("Aula tells nothing of the vacation request")
+        today = now().date()
+        if request.response_deadline is not None and request.response_deadline < today:
+            raise ValueError("The deadline of the vacation request has passed")
+        if not days:
+            raise ValueError("No day is answered")
+        answered: Dict[date, Dict[str, Any]] = {}
+        for day in days:
+            if day.day in answered:
+                raise ValueError(f"{day.day.isoformat()} is answered twice")
+            if not request.start_date <= day.day <= request.end_date:
+                raise ValueError(f"{day.day.isoformat()} is not in the request's period")
+            if day.day.weekday() >= 5:
+                raise ValueError(f"{day.day.isoformat()} is no weekday")
+            if day.day < today:
+                raise ValueError(f"{day.day.isoformat()} has passed")
+            if day.is_coming is None:
+                raise ValueError(f"{day.day.isoformat()} is not answered")
+            entry, leave = "", ""
+            if day.is_coming and request.is_presence_times_required:
+                if day.entry_time is None or day.exit_time is None:
+                    raise ValueError(f"{day.day.isoformat()} needs its entry and exit times")
+                if day.entry_time >= day.exit_time:
+                    raise ValueError(f"{day.day.isoformat()} has its entry time after its exit time")
+                entry, leave = _clock(day.entry_time), _clock(day.exit_time)
+            answered[day.day] = {"date": day.day.isoformat(), "isComing": day.is_coming, "entryTime": entry, "exitTime": leave}
+        body: Dict[str, Any] = {
+            "vacationRegistrationResponseId": request.response_id,
+            "childId": request.child_id,
+            "days": [answered[day] for day in sorted(answered)],
+            "comment": comment,
+        }
+        await self._write("calendar.respondToVacationRegistrationRequest", body)
+
+    async def threads_about(self, child: AulaChildProfile) -> List[AulaMessageThread]:
+        """The threads of the newest page that are about the child, the one with the newest message first."""
+        about = [
+            thread for thread in await self.get_message_threads()
+            if any(regarding.profile_id == child.profile_id for regarding in thread.regarding_children)
+        ]
+
+        def newest(thread: AulaMessageThread) -> datetime:
+            at = thread.latest_message.send_datetime if thread.latest_message is not None else thread.started_datetime
+            return at if at.tzinfo is not None else at.replace(tzinfo=timezone.utc)
+
+        return sorted(about, key=newest, reverse=True)
+
+    async def reply(self, thread_id: int, text: str) -> None:
+        """Send `text` to everyone still in the thread `thread_id`, from the user's own inbox.
+
+        The text is plain: it is sent as HTML, a paragraph for each run of lines between blank
+        lines. The thread is not marked read.
+
+        Raises:
+            ValueError: The text is empty, or longer than MESSAGE_MAX_LENGTH characters.
+        """
+        body: Dict[str, Any] = {
+            "threadId": thread_id,
+            "message": {"text": _message_html(text), "attachmentIds": []},
+            "commonInboxId": None,
+            "otpInboxId": None,
+        }
+        await self._write("messaging.reply", body)
+
+    async def get_profile_picture(self, child: AulaChildProfile) -> AulaProfilePicture | None:
+        """The child's profile picture as Aula tells it now; None where it has none.
+
+        Aula's address of a picture expires within about an hour, so it is read anew each time.
+        """
+        profiles = await self._get("profiles.getProfilesByLogin", "profiles", "", AulaProfileParser.parse_profiles_response, [])
+        return next((found.profile_picture for found in self.flatten_children(profiles) if found.id == child.id), None)
 
     async def _widget_send(self, call: _WidgetCall, send: Callable[[AulaToken | None], Awaitable[HttpResponse]]) -> HttpResponse | None:
         """A widget's answer, sent once more after recovering the widget token where it refused it, the first time in a read.

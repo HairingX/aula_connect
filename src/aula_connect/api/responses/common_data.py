@@ -14,4 +14,5 @@ class AulaProfilePictureData(TypedDict):
     id: NotRequired[int|None]
     isImageScalingPending: NotRequired[bool|None]
     key: NotRequired[str|None]
+    scanningStatus: NotRequired[str|None]
     url: NotRequired[str|None]

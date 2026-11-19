@@ -73,6 +73,7 @@ class AulaProfileContextWidgetData(TypedDict):
     icon: NotRequired[str|None]
     id: NotRequired[int|None]
     name: NotRequired[str|None]
+    url: NotRequired[str|None]
     widgetId: NotRequired[str|None]
     widgetSupplier: NotRequired[str|None]
     widgetVersion: NotRequired[str|None]

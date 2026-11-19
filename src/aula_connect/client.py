@@ -1,6 +1,6 @@
 """Aula read with tokens that are kept fresh: the API client and the login client together."""
 
-from collections.abc import Awaitable, Collection
+from collections.abc import Awaitable, Collection, Sequence
 from functools import partial
 from typing import Any, Callable, List
 import asyncio
@@ -17,6 +17,13 @@ from .api.const import API_VERSION
 from .api.models.constants import AulaWidgetId
 from .api.module import (
     AulaBirthdayEvent,
+    AulaPresenceConfiguration,
+    AulaProfilePicture,
+    AulaSickReportRoute,
+    AulaVacation,
+    AulaVacationDay,
+    AulaVacationRequest,
+    AulaVacationRequestDetail,
     AulaCalendarEvent,
     AulaEventDetail,
     AulaDailyOverview,
@@ -389,6 +396,71 @@ class AulaClient:
         await self._ensure_valid_token()
         return await self._proxy.get_newsletters(profiles, start_datetime, end_datetime)
 
+
+    async def get_presence_configurations(self, children: List[AulaChildProfile]) -> List[AulaPresenceConfiguration]:
+        """What the children's guardian may see and do in the presence module, for each child Aula tells it of."""
+        await self._ensure_valid_token()
+        return await self._proxy.get_presence_configurations(children)
+
+    async def get_sick_report_route(self, child: AulaChildProfile) -> AulaSickReportRoute:
+        """Where the child is reported sick; see `AulaProxyClient.get_sick_report_route`."""
+        await self._ensure_valid_token()
+        return await self._proxy.get_sick_report_route(child)
+
+    async def report_sick(self, child: AulaChildProfile) -> None:
+        """Report the child sick today; see `AulaProxyClient.report_sick`."""
+        await self._ensure_valid_token()
+        await self._proxy.report_sick(child)
+
+    async def undo_sick(self, child: AulaChildProfile) -> None:
+        """Take back today's report that the child is sick; see `AulaProxyClient.undo_sick`."""
+        await self._ensure_valid_token()
+        await self._proxy.undo_sick(child)
+
+    async def get_vacations(self, children: List[AulaChildProfile]) -> List[AulaVacation]:
+        """The vacations and time off registered for the children."""
+        await self._ensure_valid_token()
+        return await self._proxy.get_vacations(children)
+
+    async def add_vacation(self, children: List[AulaChildProfile], start: datetime.date, end: datetime.date, comment: str = "") -> None:
+        """Register a vacation for the children, `start` to `end` included; see `AulaProxyClient.add_vacation`."""
+        await self._ensure_valid_token()
+        await self._proxy.add_vacation(children, start, end, comment)
+
+    async def delete_vacation(self, vacation_id: int) -> None:
+        """Delete a vacation of one of the login's children; see `AulaProxyClient.delete_vacation`."""
+        await self._ensure_valid_token()
+        await self._proxy.delete_vacation(vacation_id)
+
+    async def get_vacation_requests(self, children: List[AulaChildProfile]) -> List[AulaVacationRequest]:
+        """The institutions' requests to say whether the children come, answered or not."""
+        await self._ensure_valid_token()
+        return await self._proxy.get_vacation_requests(children)
+
+    async def get_vacation_request(self, response_id: int) -> AulaVacationRequestDetail | None:
+        """The vacation request `response_id` with its answer as it stands; None where Aula answered with no content."""
+        await self._ensure_valid_token()
+        return await self._proxy.get_vacation_request(response_id)
+
+    async def answer_vacation_request(self, response_id: int, days: Sequence[AulaVacationDay], comment: str = "") -> None:
+        """Answer a vacation request day by day; see `AulaProxyClient.answer_vacation_request`."""
+        await self._ensure_valid_token()
+        await self._proxy.answer_vacation_request(response_id, days, comment)
+
+    async def threads_about(self, child: AulaChildProfile) -> List[AulaMessageThread]:
+        """The threads of the newest page that are about the child, the one with the newest message first."""
+        await self._ensure_valid_token()
+        return await self._proxy.threads_about(child)
+
+    async def reply(self, thread_id: int, text: str) -> None:
+        """Send plain `text` to everyone still in a thread; see `AulaProxyClient.reply`."""
+        await self._ensure_valid_token()
+        await self._proxy.reply(thread_id, text)
+
+    async def get_profile_picture(self, child: AulaChildProfile) -> AulaProfilePicture | None:
+        """The child's profile picture as Aula tells it now, its address valid for about an hour; None where it has none."""
+        await self._ensure_valid_token()
+        return await self._proxy.get_profile_picture(child)
 
 def _refuse(method: str, params: dict[str, str], body: dict[str, Any] | None) -> None:
     """Raise MethodRefusedError where `method` is not to be asked with `params` and `body`."""

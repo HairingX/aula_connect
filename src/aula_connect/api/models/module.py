@@ -7,7 +7,9 @@ from .aula_calendar_parser import AulaCalendarParser
 from .aula_event_detail_parser import AulaEventDetailParser
 from .aula_message_thread_parser import AulaMessageThreadParser
 from .aula_notification_parser import AulaNotificationParser
+from .aula_presence_parser import AulaPresenceParser
 from .aula_profile_parser import AulaProfileParser
+from .aula_vacation_parser import AulaVacationParser
 from .aula_weekly_plan_parser import AulaWeeklyPlanParser
 from .aula_easyiq_weekplan_parser import AulaEasyiqWeekplanParser
 from .aula_newsletter_parser import AulaNewsletterParser
@@ -50,6 +52,19 @@ from .aula_notification_models import(
     NotificationEventType,
     AULA_NOTIFICATION_TYPES,
 )
+from .aula_presence_models import (
+    AulaPresenceConfiguration,
+    AulaPresenceModuleType,
+    AulaPresencePermission,
+    AulaPresenceStatus,
+    AulaSickReportRoute,
+)
+from .aula_vacation_models import (
+    AulaVacation,
+    AulaVacationDay,
+    AulaVacationRequest,
+    AulaVacationRequestDetail,
+)
 from .aula_profile_models import (
     AulaChildProfile,
     AulaDailyOverview,
@@ -90,7 +105,9 @@ __all__ = [
     'AulaEventDetailParser',
     'AulaMessageThreadParser',
     'AulaNotificationParser',
+    'AulaPresenceParser',
     'AulaProfileParser',
+    'AulaVacationParser',
     'AulaWeeklyPlanParser',
     'AulaEasyiqWeekplanParser',
     'AulaNewsletterParser',
@@ -128,6 +145,17 @@ __all__ = [
     'NotificationEventType',
     'NotificationType',
     'AULA_NOTIFICATION_TYPES',
+    #presence
+    'AulaPresenceConfiguration',
+    'AulaPresenceModuleType',
+    'AulaPresencePermission',
+    'AulaPresenceStatus',
+    'AulaSickReportRoute',
+    #vacation
+    'AulaVacation',
+    'AulaVacationDay',
+    'AulaVacationRequest',
+    'AulaVacationRequestDetail',
     #profile
     'AulaChildProfile',
     'AulaDailyOverview',

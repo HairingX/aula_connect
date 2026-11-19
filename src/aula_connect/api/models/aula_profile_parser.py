@@ -45,6 +45,7 @@ class AulaProfileParser(AulaParser):
             id = AulaProfileParser._parse_int(data.get("id")),
             is_image_scaling_pending = AulaProfileParser._parse_nullable_bool(data.get("isImageScalingPending")),
             key = AulaProfileParser._parse_nullable_str(data.get("key")),
+            scanning_status = AulaProfileParser._parse_nullable_str(data.get("scanningStatus")),
             url = AulaProfileParser._parse_nullable_str(data.get("url")),
         )
         return result
@@ -100,6 +101,7 @@ class AulaProfileParser(AulaParser):
             icon = AulaProfileParser._parse_nullable_str(data.get("icon")),
             id = AulaProfileParser._parse_int(data.get("id", 0)),
             name = AulaProfileParser._parse_str(data.get("name")),
+            url = AulaProfileParser._parse_nullable_str(data.get("url")),
             widget_id = AulaProfileParser._parse_str(data.get("widgetId")),
             widget_supplier = AulaProfileParser._parse_nullable_str(data.get("widgetSupplier")),
             widget_version = AulaProfileParser._parse_nullable_str(data.get("widgetVersion")),

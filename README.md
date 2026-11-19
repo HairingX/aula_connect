@@ -33,12 +33,55 @@ async with aiohttp.ClientSession() as session:
 While the login runs, `login.get_qr_codes_svg()` gives the two QR codes to show in turn for the
 MitID app to scan.
 
+## What a guardian does in Aula
+
+> **Warning: none of these writes has been sent to the real Aula yet.** They are built from what
+> Aula's own web portal sends, and tested only against the simulated Aula. Until each has been
+> tried once against a real account, treat it as untested.
+
+Each write is sent once: never again after a failure of the network or of Aula's server, as Aula
+may have done it, only once more where Aula refused the access token, once it is renewed. A write
+is not kept with the answers (below), as it may hold what the user wrote. What Aula's portal would
+not send is refused with `ValueError`, before anything is sent.
+
+- **Presence module.** `get_presence_configurations(children)` tells, per child, what the
+  guardian's dashboard may do with each part of Aula's presence module (Komme/gå), such as
+  `report_sick` or `vacation`: `deactivated`, `readable` or `editable`.
+- **Reporting sick.** `report_sick(child)` reports the child sick today, and `undo_sick(child)`
+  takes it back where Aula tells the child as sick today. `get_sick_report_route(child)` says
+  where a child is reported sick:
+  - `AULA`: in Aula's presence module, where the guardian's dashboard may change `report_sick`.
+    Aula then informs the daycare or after-school staff only, never the school, and takes the
+    report back by itself the next day.
+  - `TABULEX`: otherwise, where the login has IST's widget into Tabulex. It is known, but not
+    supported yet: reporting sick raises `SickReportRouteNotSupportedError`.
+  - `NONE`: otherwise. Reporting sick raises `NoSickReportRouteError`.
+
+  Telling the school is a message to the teachers, a separate step.
+- **Vacation ("Ferie/fri").** `get_vacations(children)` lists the vacations registered;
+  `add_vacation(children, start, end, comment="")` registers one, whole days from `start` to
+  `end`: the start today or later, the end at most a year after it, the comment at most 250
+  characters; `delete_vacation(vacation_id)` deletes one of the login's children's, where Aula
+  lets it be changed.
+- **Vacation requests ("Ferieanmodning").** `get_vacation_requests(children)` lists the
+  institutions' requests, each with `missing_answer` and its `response_deadline`;
+  `get_vacation_request(response_id)` reads one with its answer as it stands; and
+  `answer_vacation_request(response_id, days, comment="")` answers it, for each weekday of its
+  period from today whether the child comes, with entry and exit times where the request asks
+  for them, while its deadline has not passed.
+- **Messages.** `threads_about(child)` gives the threads of the newest page that are about the
+  child, the newest first; `reply(thread_id, text)` sends plain text to everyone still in a
+  thread, as HTML paragraphs, at most 6600 characters. It never marks a thread read.
+- **The child's picture.** `get_profile_picture(child)` reads the child's profile picture anew:
+  its `url` expires within about an hour.
+
 ## What Aula sends
 
 A client keeps the newest answer to each request it sends Aula and its widgets, with its headers
 and when it came, and the newest failure of each request that failed - an error's status, or an
 error in place of an answer, such as a timeout - even where a later answer succeeded. It keeps
-them in memory only, 200 answers and 50 failures at most, and never a request's headers. To see
+them in memory only, 200 answers and 50 failures at most, and never a request's headers nor a
+write. To see
 what Aula sends, read everything once and take the answers with who someone is replaced:
 
 ```python
@@ -97,7 +140,8 @@ or a `body` that name a method or a token.
 `aula_connect.testing` has a simulated Aula for tests, on local test servers:
 `SimulatedAulaLogin` answers the whole login chain - Aula's OAuth, UniLogin, NemLog-in and a
 simulated MitID - and `SimulatedAulaApi` Aula's API and its widgets, with the data a test gives
-it. Each checks the cookies, tokens and proofs the real one checks, and takes a
+it, and keeps what the writes above change, refusing a body Aula's portal would not send as Aula
+does, with HTTP 400 and code 40. Each checks the cookies, tokens and proofs the real one checks, and takes a
 `mitid_connect.testing.Network` that gives each answer a latency and fails a share of them, for
 stress tests.
 

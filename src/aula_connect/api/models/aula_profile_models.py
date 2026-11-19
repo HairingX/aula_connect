@@ -10,7 +10,10 @@ class AulaProfilePicture:
     bucket: Optional[str|None] = None
     is_image_scaling_pending: Optional[bool|None] = None
     key: Optional[str|None] = None
+    scanning_status: Optional[str|None] = None
+    """Aula's scan of the picture, such as "available", "processing" or "blocked"."""
     url: Optional[str|None] = None
+    """Where the picture is; Aula's address expires within about an hour."""
 
 @dataclass
 class AulaInstitutionProfile:
@@ -74,6 +77,7 @@ class AulaWidget:
     widget_id: str
     description: Optional[str|None] = None
     icon: Optional[str|None] = None
+    url: Optional[str|None] = None
     widget_supplier: Optional[str|None] = None
     widget_version: Optional[str|None] = None
 
