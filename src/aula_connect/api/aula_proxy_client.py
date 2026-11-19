@@ -953,16 +953,20 @@ class AulaProxyClient:
 
     @staticmethod
     def _raise_error(response: HttpResponse) -> None:
-        """Raise the error an answer of 400 or more says, with Aula's own message where it has one."""
+        """Raise the error an answer of 400 or more says: its HTTP status, and Aula's code, sub-code and message where it has them."""
         if response.ok: return
-        message: str = f"{response.status_code} {response.reason or ''}"
+        message: str = f"HTTP {response.status_code} {response.reason or ''}".rstrip()
         try:
             responsedata: dict[str, Any] = response.json()
             status: dict[str, Any] | None = responsedata.get("status")
             if isinstance(status, dict):
+                for key, name in (("code", "Aula code"), ("subCode", "sub-code")):
+                    value: Any = status.get(key)
+                    if value is not None:
+                        message += f", {name} {value}"
                 msg: Any = status.get("message")
-                if msg is not None:
-                    message = str(msg)
+                if msg:
+                    message += f": {msg}"
         except (ValueError, AttributeError):
             pass
         if response.status_code == HTTPStatus.UNAUTHORIZED:
