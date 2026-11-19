@@ -85,7 +85,7 @@ class AulaClient:
         self._login_client = login_client
         self._token_update_callback = token_update_callback
         self._token_lock = asyncio.Lock()
-        self._proxy = AulaProxyClient(session, access_token, username_for_meebook=mitid_username)
+        self._proxy = AulaProxyClient(session, access_token)
         self._proxy.set_token_refresh_callback(self._force_refresh_access_token)
 
     @property

@@ -22,6 +22,7 @@ from aula_connect.api.aula_proxy_client import RECOVERY_COOLDOWN, AulaProxyClien
 from aula_connect.api.models.aula_profile_models import (
     AulaChildProfile,
     AulaLoginData,
+    AulaProfile,
     AulaToken,
     AulaWidget,
 )
@@ -633,7 +634,7 @@ class TestGetAulaTokenRetry(unittest.TestCase):
 def _meebook_login() -> AulaLoginData:
     return AulaLoginData(
         api_version=19,
-        profiles=[],
+        profiles=[AulaProfile([], "Pat", [], "Pat Example", 201, "pat")],
         widgets=[AulaWidget(id=1, name="Meebook", widget_id=AulaWidgetId.WEEKPLAN_PARENTS)],
     )
 
