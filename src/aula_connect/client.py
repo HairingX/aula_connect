@@ -5,6 +5,7 @@ from functools import partial
 from typing import Any, Callable, List
 import asyncio
 import datetime
+import json
 import logging
 import re
 import time
@@ -17,6 +18,7 @@ from .api.models.constants import AulaWidgetId
 from .api.module import (
     AulaBirthdayEvent,
     AulaCalendarEvent,
+    AulaEventDetail,
     AulaDailyOverview,
     AulaEasyiqWeeklyPlan,
     AulaInstitutionProfile,
@@ -32,6 +34,7 @@ from .api.module import (
 )
 from .anomaly import Anomaly
 from .api.aula_errors import AulaCredentialError, MethodRefusedError
+from .methods import Kind, alike, known
 from .pseudonym import pseudonymised, shapes
 from .login import AulaLoginClient
 from .redact import redact
@@ -193,6 +196,11 @@ class AulaClient:
         await self._ensure_valid_token()
         return await self._proxy.get_birthday_events(profiles, start_datetime, end_datetime)
 
+    async def get_event(self, event_id: int) -> AulaEventDetail | None:
+        """The event `event_id` as Aula tells it alone; None where Aula answered with no content."""
+        await self._ensure_valid_token()
+        return await self._proxy.get_event(event_id)
+
     async def get_messages(self, thread: AulaMessageThread) -> List[AulaMessage]:
         """The newest page of the messages of a thread not marked sensitive."""
         await self._ensure_valid_token()
@@ -201,7 +209,8 @@ class AulaClient:
     async def read_everything(self, start: datetime.datetime, end: datetime.datetime) -> List[str]:
         """Read once all this client reads from Aula, so that its recorder holds each answer.
 
-        `start` and `end` bound the calendar events, birthdays, weekly plans and newsletters, and
+        `start` and `end` bound the calendar events, each but a lesson read by its id too, the
+        birthdays, weekly plans and newsletters, and
         the next birthday from `start` is looked for too, four weeks a request, a year at most; the messages of every thread of the
         newest page are read as well, but for those Aula marks sensitive, which the client never
         reads.
@@ -235,7 +244,9 @@ class AulaClient:
             await read("messages", partial(self.get_messages, thread))
         await read("notifications", partial(self.get_notifications, children))
         for institution in institutions.values():
-            await read("calendar events", partial(self.get_calendar_events, [institution], start, end))
+            events = await read("calendar events", partial(self.get_calendar_events, [institution], start, end)) or []
+            for event in [event for event in events if event.type != "lesson"]:
+                await read("event", partial(self.get_event, event.id))
         await read("birthdays", partial(self.get_birthday_events, children, start, end))
         for period in range(0, YEAR.days, BIRTHDAY_PERIOD.days):
             begin = start + datetime.timedelta(days=period)
@@ -265,29 +276,31 @@ class AulaClient:
         return self._proxy.anomalies(since)
 
     async def read(
-        self, method: str, params: dict[str, str], key: bytes, reveal: bool | Collection[str] = False
+        self,
+        method: str,
+        params: dict[str, str],
+        key: bytes,
+        reveal: bool | Collection[str] = False,
+        body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Ask Aula's API `method` with `params`, and give its answer as `responses` gives one.
 
-        Only a method that gets, named "<area>.get<What>", is asked, and never the messages of a
-        thread nor a secure document, which may be marked sensitive. `reveal` keeps the values
-        under the keys it names as Aula sent them, or all the answer where it is True; the MitID
-        username and every token are hidden all the same.
+        A method `aula_connect.methods` knows is asked as it is known to be: with GET, or with POST
+        and `body` as JSON; one it does not know is asked where it is named as one that gets,
+        "<area>.get<What>" or "<area>.find<What>". Never asked are a method that changes Aula, nor
+        what may be marked sensitive - the text of messages and secure documents. `reveal` keeps
+        the values under the keys it names as Aula sent them, or all the answer where it is True;
+        the MitID username and every token are hidden all the same.
 
         Raises:
-            MethodRefusedError: The method is not one that only gets, is one of those never
-                asked, or `params` names a method or a token.
+            MethodRefusedError: The method is never asked, in any case, it is asked with the
+                other verb, or `params` or `body` names a method or a token.
         """
-        if (
-            not re.fullmatch(r"[a-z]+\.get[A-Z][A-Za-z]*", method)
-            or method.lower() == "messaging.getmessagesforthread"
-            or "secure" in method.lower()
-        ):
-            raise MethodRefusedError(f"{method!r} is not a method that only gets")
-        if {"method", "access_token"} & {name.lower() for name in params}:
-            raise MethodRefusedError("params must not name a method or a token")
+        _refuse(method, params, body)
         await self._ensure_valid_token()
-        await self._proxy.custom_api_call(f"?{urlencode({**params, 'method': method})}", None)
+        await self._proxy.custom_api_call(
+            f"?{urlencode({**params, 'method': method})}", None if body is None else json.dumps(body)
+        )
         secrets = [self._mitid_username, self._access_token, self._refresh_token, *self._proxy.secrets()]
         answers = pseudonymised(self._proxy.recorder.exchanges(), key, secrets, reveal)
         return [answer for answer in answers if answer["endpoint"] == method][-1]
@@ -375,3 +388,24 @@ class AulaClient:
         """The children's weekly newsletters in MinUddannelse in the period."""
         await self._ensure_valid_token()
         return await self._proxy.get_newsletters(profiles, start_datetime, end_datetime)
+
+
+def _refuse(method: str, params: dict[str, str], body: dict[str, Any] | None) -> None:
+    """Raise MethodRefusedError where `method` is not to be asked with `params` and `body`."""
+    if (never := alike(method)) is not None and not never.readable:
+        raise MethodRefusedError(f"{method!r} is never asked: {_NEVER[never.kind]}")
+    if (found := known(method)) is not None:
+        if (found.verb == "POST") != (body is not None):
+            raise MethodRefusedError(f"{method!r} is asked with {found.verb}, {'with' if body is None else 'without'} a body")
+    elif not re.fullmatch(r"[a-z]+\.(get|find)[A-Z][A-Za-z]*", method) or re.search("messag|secure", method, re.IGNORECASE):
+        raise MethodRefusedError(f"{method!r} is not known, nor named as a method that only gets")
+    if {"method", "access_token"} & {name.lower() for name in [*params, *(body or {})]}:
+        raise MethodRefusedError("params and body must not name a method or a token")
+
+
+_NEVER = {
+    Kind.MESSAGES: "it gets the text of messages, which may be marked sensitive",
+    Kind.SECURE_DOCUMENTS: "it gets secure documents, which may be marked sensitive",
+    Kind.TOKEN: "it hands out a token, which is a credential",
+    Kind.WRITE: "it changes Aula",
+}

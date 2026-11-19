@@ -74,19 +74,25 @@ sensitive, which the client never reads.
 
 `client.anomalies(since=None)` names what Aula sent that the client does not know or could not
 read, each `Anomaly` once with its `kind`, its `detail` and when it was `last_seen`, the latest
-first: a notification of an unknown area, an answer that could not be read, a version of Aula's API
-the client was not made for, met again at each login while it lasts. None tells any of Aula's data,
+first: a notification of an unknown area, an answer that could not be read, an answer in a shape
+other than the one known (`docs/aula-shapes.md`), a version of Aula's API the client was not made
+for, met again at each login while it lasts. None tells any of Aula's data,
 so a caller can show them and ask for the answers when Aula changes; `since`, a time with its zone,
 leaves out what was not met again since. A later minor version may add a kind, never rename or
 remove one, so a caller handles a kind it does not know.
 
-`client.read(method, params, key, reveal=False)` asks one method of Aula's API that only gets,
-named `<area>.get<What>`, and gives its answer as `responses` gives one. `reveal` keeps the values
-under the keys it names as Aula sent them, such as `["widgetCategory"]` to see a field of a module
-not known yet, or the whole answer with `True`; the MitID username and every token are hidden all
-the same. What is revealed is no longer anonymous: share it only in private. It raises `MethodRefusedError`
-for any other method, for the messages of a thread or a secure document, and for `params` that
-name a method or a token.
+`client.read(method, params, key, reveal=False, body=None)` asks one method of Aula's API that
+only gets, and gives its answer as `responses` gives one. `aula_connect.methods` lists every
+method known to exist, and how each is asked (`docs/aula-methods.md`). A listed method is asked with its verb: GET, or POST with `body` as
+JSON, such as `calendar.getEventsByProfileIdsAndResourceIds`. One not listed is asked with GET,
+or POST where `body` is given, where it is named as one that gets, `<area>.get<What>` or
+`<area>.find<What>`. `reveal` keeps the values under the keys it names as Aula sent them, such as
+`["widgetCategory"]` to see a field of a module not known yet, or the whole answer with `True`;
+the MitID username and every token are hidden all the same. What is revealed is no longer
+anonymous: share it only in private. It raises `MethodRefusedError`, asking Aula nothing, for a
+method that changes Aula, hands out a token, or gets the text of messages or secure documents,
+whatever the case of its name; for a listed method asked with the other verb; and for `params`
+or a `body` that name a method or a token.
 
 `aula_connect.testing` has a simulated Aula for tests, on local test servers:
 `SimulatedAulaLogin` answers the whole login chain - Aula's OAuth, UniLogin, NemLog-in and a

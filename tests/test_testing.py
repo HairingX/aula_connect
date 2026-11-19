@@ -57,7 +57,7 @@ def test_a_login_that_does_not_keep_its_cookies_fails() -> None:
 API_REFUSALS: list[tuple[str, str, int]] = [
     ("POST", f"/api/v{SimulatedAulaApi.VERSION}?method=calendar.getEventsByProfileIdsAndResourceIds&access_token=access", 403),
     ("GET", f"/api/v{SimulatedAulaApi.VERSION}?method=no.suchMethod&access_token=access", 404),
-    ("GET", "/meebook/relatedweekplan/all", 401),
+    ("GET", "/aulaapi/relatedweekplan/all", 401),
     ("POST", "/easyiq/weekplaninfo", 401),
     ("GET", "/minuddannelse/ugebrev", 401),
 ]

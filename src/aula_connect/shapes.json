@@ -1,0 +1,4228 @@
+{
+ "GET /aulaapi/relatedweekplan/all": {
+  ".": [
+   "list"
+  ],
+  "[]": [
+   "object"
+  ],
+  "[].id": [
+   "int"
+  ],
+  "[].name": [
+   "str"
+  ],
+  "[].unilogin": [
+   "str"
+  ],
+  "[].weekPlan": [
+   "list"
+  ],
+  "[].weekPlan[]": [
+   "object"
+  ],
+  "[].weekPlan[].date": [
+   "str"
+  ],
+  "[].weekPlan[].tasks": [
+   "list"
+  ],
+  "[].weekPlan[].tasks[]": [
+   "object"
+  ],
+  "[].weekPlan[].tasks[].content": [
+   "str"
+  ],
+  "[].weekPlan[].tasks[].group": [
+   "str"
+  ],
+  "[].weekPlan[].tasks[].id": [
+   "int"
+  ],
+  "[].weekPlan[].tasks[].pill": [
+   "str"
+  ],
+  "[].weekPlan[].tasks[].type": [
+   "str"
+  ]
+ },
+ "GET aulaToken.getAulaToken": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "str"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
+ "GET calendar.getBirthdayEventsForInstitutions": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "list"
+  ],
+  "data[]": [
+   "object"
+  ],
+  "data[].birthday": [
+   "str"
+  ],
+  "data[].institutionCode": [
+   "str"
+  ],
+  "data[].institutionProfileId": [
+   "int"
+  ],
+  "data[].mainGroupName": [
+   "str"
+  ],
+  "data[].name": [
+   "str"
+  ],
+  "data[].relatedChildrenIds": [
+   "list"
+  ],
+  "data[].relatedChildrenIds[]": [
+   "int"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
+ "GET calendar.getEventById": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "object"
+  ],
+  "data.actualNumberOfParticipants": [
+   "null"
+  ],
+  "data.addedToInstitutionCalendar": [
+   "bool"
+  ],
+  "data.additionalResourceText": [
+   "null"
+  ],
+  "data.additionalResources": [
+   "list"
+  ],
+  "data.allDay": [
+   "bool"
+  ],
+  "data.attachments": [
+   "list"
+  ],
+  "data.canAnswerForSeries": [
+   "null"
+  ],
+  "data.canEditStartDate": [
+   "null"
+  ],
+  "data.coOrganizers": [
+   "list"
+  ],
+  "data.coOrganizers[]": [
+   "object"
+  ],
+  "data.coOrganizers[].instProfile": [
+   "object"
+  ],
+  "data.coOrganizers[].instProfile.firstName": [
+   "str"
+  ],
+  "data.coOrganizers[].instProfile.fullName": [
+   "str"
+  ],
+  "data.coOrganizers[].instProfile.id": [
+   "int"
+  ],
+  "data.coOrganizers[].instProfile.institutionCode": [
+   "str"
+  ],
+  "data.coOrganizers[].instProfile.institutionName": [
+   "str"
+  ],
+  "data.coOrganizers[].instProfile.lastName": [
+   "str"
+  ],
+  "data.coOrganizers[].instProfile.metadata": [
+   "str"
+  ],
+  "data.coOrganizers[].instProfile.profileId": [
+   "int"
+  ],
+  "data.coOrganizers[].instProfile.profilePictureUrl": [
+   "str"
+  ],
+  "data.coOrganizers[].instProfile.role": [
+   "str"
+  ],
+  "data.coOrganizers[].instProfile.shortName": [
+   "str"
+  ],
+  "data.coOrganizers[].numberOfAdultParticipants": [
+   "null"
+  ],
+  "data.coOrganizers[].numberOfChildParticipants": [
+   "null"
+  ],
+  "data.coOrganizers[].responseDateTime": [
+   "str"
+  ],
+  "data.coOrganizers[].responseType": [
+   "str"
+  ],
+  "data.creator": [
+   "object"
+  ],
+  "data.creator.id": [
+   "int"
+  ],
+  "data.creator.institutionCode": [
+   "str"
+  ],
+  "data.creator.institutionName": [
+   "str"
+  ],
+  "data.creator.institutionRole": [
+   "str"
+  ],
+  "data.creator.mainGroup": [
+   "null"
+  ],
+  "data.creator.metadata": [
+   "str"
+  ],
+  "data.creator.name": [
+   "str"
+  ],
+  "data.creator.profileId": [
+   "int"
+  ],
+  "data.creator.profilePicture": [
+   "null",
+   "object"
+  ],
+  "data.creator.profilePicture.bucket": [
+   "str"
+  ],
+  "data.creator.profilePicture.id": [
+   "int"
+  ],
+  "data.creator.profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.creator.profilePicture.key": [
+   "str"
+  ],
+  "data.creator.profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.creator.profilePicture.url": [
+   "str"
+  ],
+  "data.creator.role": [
+   "str"
+  ],
+  "data.creator.shortName": [
+   "str"
+  ],
+  "data.description": [
+   "object"
+  ],
+  "data.description.html": [
+   "str"
+  ],
+  "data.doRequestNumberOfParticipants": [
+   "bool"
+  ],
+  "data.endDateTime": [
+   "str"
+  ],
+  "data.eventClass": [
+   "str"
+  ],
+  "data.hideInOwnCalendar": [
+   "bool"
+  ],
+  "data.id": [
+   "int"
+  ],
+  "data.institutionCode": [
+   "str"
+  ],
+  "data.institutionName": [
+   "str"
+  ],
+  "data.invitedGroupHomeChildren": [
+   "list"
+  ],
+  "data.invitedGroups": [
+   "list"
+  ],
+  "data.inviteeGroups": [
+   "list"
+  ],
+  "data.inviteeGroups[]": [
+   "object"
+  ],
+  "data.inviteeGroups[].group": [
+   "object"
+  ],
+  "data.inviteeGroups[].group.access": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.allowMembersToBeShown": [
+   "bool"
+  ],
+  "data.inviteeGroups[].group.createdAt": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.currentUserCanAccessGroupDashboard": [
+   "bool"
+  ],
+  "data.inviteeGroups[].group.dashboardEnabled": [
+   "bool"
+  ],
+  "data.inviteeGroups[].group.deactivatedByAdmin": [
+   "bool"
+  ],
+  "data.inviteeGroups[].group.description": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.endTime": [
+   "null"
+  ],
+  "data.inviteeGroups[].group.id": [
+   "int"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedAt": [
+   "null",
+   "str"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy": [
+   "null",
+   "object"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.id": [
+   "int"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.institutionCode": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.institutionName": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.institutionRole": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.mainGroup": [
+   "null"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.metadata": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.name": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.profileId": [
+   "int"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.profilePicture": [
+   "object"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.profilePicture.bucket": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.profilePicture.id": [
+   "int"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.profilePicture.key": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.profilePicture.url": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.role": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.importantSettingsUpdatedBy.shortName": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.institutionCode": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.name": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.status": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.type": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.uniGroupId": [
+   "str"
+  ],
+  "data.inviteeGroups[].group.validGroupModules": [
+   "list"
+  ],
+  "data.inviteeGroups[].group.validGroupWidgets": [
+   "list"
+  ],
+  "data.inviteeGroups[].invitedPortalRoles": [
+   "list"
+  ],
+  "data.inviteeGroups[].invitedPortalRoles[]": [
+   "str"
+  ],
+  "data.invitees": [
+   "list"
+  ],
+  "data.invitees[]": [
+   "object"
+  ],
+  "data.invitees[].instProfile": [
+   "object"
+  ],
+  "data.invitees[].instProfile.firstName": [
+   "str"
+  ],
+  "data.invitees[].instProfile.fullName": [
+   "str"
+  ],
+  "data.invitees[].instProfile.id": [
+   "int"
+  ],
+  "data.invitees[].instProfile.institutionCode": [
+   "str"
+  ],
+  "data.invitees[].instProfile.institutionName": [
+   "str"
+  ],
+  "data.invitees[].instProfile.lastName": [
+   "str"
+  ],
+  "data.invitees[].instProfile.metadata": [
+   "str"
+  ],
+  "data.invitees[].instProfile.profileId": [
+   "int"
+  ],
+  "data.invitees[].instProfile.profilePictureUrl": [
+   "null",
+   "str"
+  ],
+  "data.invitees[].instProfile.role": [
+   "str"
+  ],
+  "data.invitees[].instProfile.shortName": [
+   "str"
+  ],
+  "data.invitees[].numberOfAdultParticipants": [
+   "null"
+  ],
+  "data.invitees[].numberOfChildParticipants": [
+   "null"
+  ],
+  "data.invitees[].responseDateTime": [
+   "str"
+  ],
+  "data.invitees[].responseType": [
+   "str"
+  ],
+  "data.isDeadlineExceeded": [
+   "bool"
+  ],
+  "data.isDeleted": [
+   "bool"
+  ],
+  "data.isVacationCreatedFromVacationRequest": [
+   "null"
+  ],
+  "data.lastReminderDateTime": [
+   "null"
+  ],
+  "data.lesson": [
+   "null"
+  ],
+  "data.maximumNumberOfParticipants": [
+   "null"
+  ],
+  "data.occurrenceDate": [
+   "null"
+  ],
+  "data.oldAllDay": [
+   "null"
+  ],
+  "data.oldEndDateTime": [
+   "null"
+  ],
+  "data.oldStartDateTime": [
+   "null"
+  ],
+  "data.pendingMedia": [
+   "bool"
+  ],
+  "data.primaryResource": [
+   "null"
+  ],
+  "data.primaryResourceText": [
+   "null"
+  ],
+  "data.private": [
+   "bool"
+  ],
+  "data.repeating": [
+   "null"
+  ],
+  "data.responseDeadline": [
+   "str"
+  ],
+  "data.responseRequired": [
+   "bool"
+  ],
+  "data.startDateTime": [
+   "str"
+  ],
+  "data.timeSlot": [
+   "object"
+  ],
+  "data.timeSlot.breakLength": [
+   "int"
+  ],
+  "data.timeSlot.canUpdateResponseToEvent": [
+   "bool"
+  ],
+  "data.timeSlot.childRequired": [
+   "bool"
+  ],
+  "data.timeSlot.meetingDuration": [
+   "int"
+  ],
+  "data.timeSlot.meetingsBetweenBreaks": [
+   "int"
+  ],
+  "data.timeSlot.numberOfParticipantsPerTimeSlot": [
+   "null"
+  ],
+  "data.timeSlot.timeSlots": [
+   "list"
+  ],
+  "data.timeSlot.timeSlots[]": [
+   "object"
+  ],
+  "data.timeSlot.timeSlots[].answers": [
+   "list"
+  ],
+  "data.timeSlot.timeSlots[].answers[]": [
+   "object"
+  ],
+  "data.timeSlot.timeSlots[].answers[].canRemoveBlockingOrResponseForTimeSlot": [
+   "bool"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile": [
+   "object"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.firstName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.fullName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.gender": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.id": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.institution": [
+   "object"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.institution.administrativeAuthority": [
+   "object"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.institution.administrativeAuthority.id": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.institution.administrativeAuthority.institutionCodes": [
+   "list"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.institution.administrativeAuthority.name": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.institution.institutionCode": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.institution.institutionName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.institution.municipalityCode": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.institution.municipalityName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.institution.type": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.lastName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.mailBoxId": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.mainGroupName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.metadata": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.profileId": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.profilePicture": [
+   "object"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.profilePicture.bucket": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.profilePicture.id": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.profilePicture.key": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.profilePicture.url": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.role": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.shortName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].concerningProfile.uniPersonId": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].answers[].id": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile": [
+   "object"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.firstName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.fullName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.gender": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.id": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.institution": [
+   "object"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.institution.administrativeAuthority": [
+   "object"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.institution.administrativeAuthority.id": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.institution.administrativeAuthority.institutionCodes": [
+   "list"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.institution.administrativeAuthority.name": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.institution.institutionCode": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.institution.institutionName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.institution.municipalityCode": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.institution.municipalityName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.institution.type": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.lastName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.mailBoxId": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.mainGroupName": [
+   "null"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.metadata": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.profileId": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.profilePicture": [
+   "null",
+   "object"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.profilePicture.bucket": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.profilePicture.id": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.profilePicture.key": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.profilePicture.url": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.role": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.shortName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].answers[].instProfile.uniPersonId": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].answers[].selectedTimeSlotIndex": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].endDate": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].id": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource": [
+   "null",
+   "object"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.contactPerson": [
+   "null"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.description": [
+   "null"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.displayName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.id": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.inactiveReason": [
+   "null"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.institutionCode": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.institutionName": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.location": [
+   "null"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.name": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.public": [
+   "bool"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.quantity": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.resourceCategory": [
+   "object"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.resourceCategory.description": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.resourceCategory.editable": [
+   "bool"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.resourceCategory.id": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.resourceCategory.institution": [
+   "object"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.resourceCategory.institution.institutionCode": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.resourceCategory.institution.name": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.resourceCategory.name": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.resourceCategory.resourceType": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.shortName": [
+   "null"
+  ],
+  "data.timeSlot.timeSlots[].primaryResource.status": [
+   "int"
+  ],
+  "data.timeSlot.timeSlots[].primaryResourceText": [
+   "null",
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].startDate": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].timeSlotIndexes": [
+   "list"
+  ],
+  "data.timeSlot.timeSlots[].timeSlotIndexes[]": [
+   "object"
+  ],
+  "data.timeSlot.timeSlots[].timeSlotIndexes[].endTime": [
+   "str"
+  ],
+  "data.timeSlot.timeSlots[].timeSlotIndexes[].startTime": [
+   "str"
+  ],
+  "data.title": [
+   "str"
+  ],
+  "data.type": [
+   "str"
+  ],
+  "data.vacationRegistration": [
+   "null"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
+ "GET messaging.getMessagesForThread": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "object"
+  ],
+  "data.extraRecipientsCount": [
+   "null"
+  ],
+  "data.firstMessage": [
+   "object"
+  ],
+  "data.firstMessage.attachments": [
+   "list",
+   "null"
+  ],
+  "data.firstMessage.attachments[]": [
+   "object"
+  ],
+  "data.firstMessage.attachments[].creator": [
+   "object"
+  ],
+  "data.firstMessage.attachments[].creator.id": [
+   "int"
+  ],
+  "data.firstMessage.attachments[].creator.institutionCode": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].creator.institutionName": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].creator.institutionRole": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].creator.mainGroup": [
+   "null"
+  ],
+  "data.firstMessage.attachments[].creator.metadata": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].creator.name": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].creator.profileId": [
+   "int"
+  ],
+  "data.firstMessage.attachments[].creator.profilePicture": [
+   "null",
+   "object"
+  ],
+  "data.firstMessage.attachments[].creator.profilePicture.bucket": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].creator.profilePicture.id": [
+   "int"
+  ],
+  "data.firstMessage.attachments[].creator.profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.firstMessage.attachments[].creator.profilePicture.key": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].creator.profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].creator.profilePicture.url": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].creator.role": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].creator.shortName": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].currentUserCanReport": [
+   "bool"
+  ],
+  "data.firstMessage.attachments[].document": [
+   "null"
+  ],
+  "data.firstMessage.attachments[].file": [
+   "null",
+   "object"
+  ],
+  "data.firstMessage.attachments[].file.bucket": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].file.created": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].file.id": [
+   "int"
+  ],
+  "data.firstMessage.attachments[].file.key": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].file.name": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].file.scanningStatus": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].file.url": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].id": [
+   "int"
+  ],
+  "data.firstMessage.attachments[].link": [
+   "null"
+  ],
+  "data.firstMessage.attachments[].media": [
+   "null",
+   "object"
+  ],
+  "data.firstMessage.attachments[].media.album": [
+   "null"
+  ],
+  "data.firstMessage.attachments[].media.allowsComments": [
+   "bool"
+  ],
+  "data.firstMessage.attachments[].media.canViewComments": [
+   "bool"
+  ],
+  "data.firstMessage.attachments[].media.commentCount": [
+   "int"
+  ],
+  "data.firstMessage.attachments[].media.conversionStatus": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.creator": [
+   "object"
+  ],
+  "data.firstMessage.attachments[].media.creator.id": [
+   "int"
+  ],
+  "data.firstMessage.attachments[].media.creator.institutionCode": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.creator.institutionName": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.creator.institutionRole": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.creator.mainGroup": [
+   "null"
+  ],
+  "data.firstMessage.attachments[].media.creator.metadata": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.creator.name": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.creator.profileId": [
+   "int"
+  ],
+  "data.firstMessage.attachments[].media.creator.profilePicture": [
+   "null",
+   "object"
+  ],
+  "data.firstMessage.attachments[].media.creator.profilePicture.bucket": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.creator.profilePicture.id": [
+   "int"
+  ],
+  "data.firstMessage.attachments[].media.creator.profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.firstMessage.attachments[].media.creator.profilePicture.key": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.creator.profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.creator.profilePicture.url": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.creator.role": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.creator.shortName": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.currentUserCanDelete": [
+   "bool"
+  ],
+  "data.firstMessage.attachments[].media.currentUserCanEditMetaData": [
+   "bool"
+  ],
+  "data.firstMessage.attachments[].media.currentUserCanEditTags": [
+   "bool"
+  ],
+  "data.firstMessage.attachments[].media.currentUserCanReport": [
+   "bool"
+  ],
+  "data.firstMessage.attachments[].media.description": [
+   "null",
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.duration": [
+   "null"
+  ],
+  "data.firstMessage.attachments[].media.extraSmallThumbnailUrl": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.file": [
+   "object"
+  ],
+  "data.firstMessage.attachments[].media.file.bucket": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.file.created": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.file.id": [
+   "int"
+  ],
+  "data.firstMessage.attachments[].media.file.key": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.file.name": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.file.scanningStatus": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.file.url": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.hasVideoThumbnail": [
+   "bool"
+  ],
+  "data.firstMessage.attachments[].media.id": [
+   "int"
+  ],
+  "data.firstMessage.attachments[].media.isDeleted": [
+   "bool"
+  ],
+  "data.firstMessage.attachments[].media.isUploadPending": [
+   "null"
+  ],
+  "data.firstMessage.attachments[].media.largeThumbnailUrl": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.mediaType": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.mediumThumbnailUrl": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.smallThumbnailUrl": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.tags": [
+   "list"
+  ],
+  "data.firstMessage.attachments[].media.thumbnailUrl": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].media.title": [
+   "null",
+   "str"
+  ],
+  "data.firstMessage.attachments[].name": [
+   "str"
+  ],
+  "data.firstMessage.attachments[].status": [
+   "str"
+  ],
+  "data.firstMessage.canReplyToMessage": [
+   "bool"
+  ],
+  "data.firstMessage.deletedAt": [
+   "null"
+  ],
+  "data.firstMessage.hasAttachments": [
+   "bool"
+  ],
+  "data.firstMessage.id": [
+   "str"
+  ],
+  "data.firstMessage.inviterName": [
+   "null"
+  ],
+  "data.firstMessage.leaverNames": [
+   "null"
+  ],
+  "data.firstMessage.messageType": [
+   "str"
+  ],
+  "data.firstMessage.newRecipients": [
+   "null"
+  ],
+  "data.firstMessage.originalRecipients": [
+   "null"
+  ],
+  "data.firstMessage.pendingMedia": [
+   "bool"
+  ],
+  "data.firstMessage.sendDateTime": [
+   "str"
+  ],
+  "data.firstMessage.sender": [
+   "object"
+  ],
+  "data.firstMessage.sender.answerDirectlyName": [
+   "str"
+  ],
+  "data.firstMessage.sender.fullName": [
+   "str"
+  ],
+  "data.firstMessage.sender.institutionCode": [
+   "str"
+  ],
+  "data.firstMessage.sender.mailBoxOwner": [
+   "object"
+  ],
+  "data.firstMessage.sender.mailBoxOwner.id": [
+   "int"
+  ],
+  "data.firstMessage.sender.mailBoxOwner.isDeactivated": [
+   "bool"
+  ],
+  "data.firstMessage.sender.mailBoxOwner.mailBoxOwnerType": [
+   "str"
+  ],
+  "data.firstMessage.sender.mailBoxOwner.portalRole": [
+   "str"
+  ],
+  "data.firstMessage.sender.mailBoxOwner.profileId": [
+   "int"
+  ],
+  "data.firstMessage.sender.metadata": [
+   "str"
+  ],
+  "data.firstMessage.sender.profilePicture": [
+   "null",
+   "object"
+  ],
+  "data.firstMessage.sender.profilePicture.url": [
+   "str"
+  ],
+  "data.firstMessage.sender.shortName": [
+   "str"
+  ],
+  "data.firstMessage.text": [
+   "object"
+  ],
+  "data.firstMessage.text.html": [
+   "str"
+  ],
+  "data.folderName": [
+   "null"
+  ],
+  "data.hasSecureDocuments": [
+   "bool"
+  ],
+  "data.id": [
+   "int"
+  ],
+  "data.institutionCode": [
+   "str"
+  ],
+  "data.isArchived": [
+   "bool"
+  ],
+  "data.isThreadForwarded": [
+   "bool"
+  ],
+  "data.lastReadMessageId": [
+   "str"
+  ],
+  "data.mailBoxOwner": [
+   "object"
+  ],
+  "data.mailBoxOwner.id": [
+   "int"
+  ],
+  "data.mailBoxOwner.isDeactivated": [
+   "bool"
+  ],
+  "data.mailBoxOwner.mailBoxOwnerType": [
+   "str"
+  ],
+  "data.mailBoxOwner.portalRole": [
+   "str"
+  ],
+  "data.mailBoxOwner.profileId": [
+   "int"
+  ],
+  "data.marked": [
+   "bool"
+  ],
+  "data.messages": [
+   "list"
+  ],
+  "data.messages[]": [
+   "object"
+  ],
+  "data.messages[].attachments": [
+   "list",
+   "null"
+  ],
+  "data.messages[].attachments[]": [
+   "object"
+  ],
+  "data.messages[].attachments[].creator": [
+   "object"
+  ],
+  "data.messages[].attachments[].creator.id": [
+   "int"
+  ],
+  "data.messages[].attachments[].creator.institutionCode": [
+   "str"
+  ],
+  "data.messages[].attachments[].creator.institutionName": [
+   "str"
+  ],
+  "data.messages[].attachments[].creator.institutionRole": [
+   "str"
+  ],
+  "data.messages[].attachments[].creator.mainGroup": [
+   "null"
+  ],
+  "data.messages[].attachments[].creator.metadata": [
+   "str"
+  ],
+  "data.messages[].attachments[].creator.name": [
+   "str"
+  ],
+  "data.messages[].attachments[].creator.profileId": [
+   "int"
+  ],
+  "data.messages[].attachments[].creator.profilePicture": [
+   "null",
+   "object"
+  ],
+  "data.messages[].attachments[].creator.profilePicture.bucket": [
+   "str"
+  ],
+  "data.messages[].attachments[].creator.profilePicture.id": [
+   "int"
+  ],
+  "data.messages[].attachments[].creator.profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.messages[].attachments[].creator.profilePicture.key": [
+   "str"
+  ],
+  "data.messages[].attachments[].creator.profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.messages[].attachments[].creator.profilePicture.url": [
+   "str"
+  ],
+  "data.messages[].attachments[].creator.role": [
+   "str"
+  ],
+  "data.messages[].attachments[].creator.shortName": [
+   "str"
+  ],
+  "data.messages[].attachments[].currentUserCanReport": [
+   "bool"
+  ],
+  "data.messages[].attachments[].document": [
+   "null"
+  ],
+  "data.messages[].attachments[].file": [
+   "null",
+   "object"
+  ],
+  "data.messages[].attachments[].file.bucket": [
+   "str"
+  ],
+  "data.messages[].attachments[].file.created": [
+   "str"
+  ],
+  "data.messages[].attachments[].file.id": [
+   "int"
+  ],
+  "data.messages[].attachments[].file.key": [
+   "str"
+  ],
+  "data.messages[].attachments[].file.name": [
+   "str"
+  ],
+  "data.messages[].attachments[].file.scanningStatus": [
+   "str"
+  ],
+  "data.messages[].attachments[].file.url": [
+   "str"
+  ],
+  "data.messages[].attachments[].id": [
+   "int"
+  ],
+  "data.messages[].attachments[].link": [
+   "null"
+  ],
+  "data.messages[].attachments[].media": [
+   "null",
+   "object"
+  ],
+  "data.messages[].attachments[].media.album": [
+   "null"
+  ],
+  "data.messages[].attachments[].media.allowsComments": [
+   "bool"
+  ],
+  "data.messages[].attachments[].media.canViewComments": [
+   "bool"
+  ],
+  "data.messages[].attachments[].media.commentCount": [
+   "int"
+  ],
+  "data.messages[].attachments[].media.conversionStatus": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.creator": [
+   "object"
+  ],
+  "data.messages[].attachments[].media.creator.id": [
+   "int"
+  ],
+  "data.messages[].attachments[].media.creator.institutionCode": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.creator.institutionName": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.creator.institutionRole": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.creator.mainGroup": [
+   "null"
+  ],
+  "data.messages[].attachments[].media.creator.metadata": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.creator.name": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.creator.profileId": [
+   "int"
+  ],
+  "data.messages[].attachments[].media.creator.profilePicture": [
+   "null",
+   "object"
+  ],
+  "data.messages[].attachments[].media.creator.profilePicture.bucket": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.creator.profilePicture.id": [
+   "int"
+  ],
+  "data.messages[].attachments[].media.creator.profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.messages[].attachments[].media.creator.profilePicture.key": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.creator.profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.creator.profilePicture.url": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.creator.role": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.creator.shortName": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.currentUserCanDelete": [
+   "bool"
+  ],
+  "data.messages[].attachments[].media.currentUserCanEditMetaData": [
+   "bool"
+  ],
+  "data.messages[].attachments[].media.currentUserCanEditTags": [
+   "bool"
+  ],
+  "data.messages[].attachments[].media.currentUserCanReport": [
+   "bool"
+  ],
+  "data.messages[].attachments[].media.description": [
+   "null",
+   "str"
+  ],
+  "data.messages[].attachments[].media.duration": [
+   "null"
+  ],
+  "data.messages[].attachments[].media.extraSmallThumbnailUrl": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.file": [
+   "object"
+  ],
+  "data.messages[].attachments[].media.file.bucket": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.file.created": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.file.id": [
+   "int"
+  ],
+  "data.messages[].attachments[].media.file.key": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.file.name": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.file.scanningStatus": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.file.url": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.hasVideoThumbnail": [
+   "bool"
+  ],
+  "data.messages[].attachments[].media.id": [
+   "int"
+  ],
+  "data.messages[].attachments[].media.isDeleted": [
+   "bool"
+  ],
+  "data.messages[].attachments[].media.isUploadPending": [
+   "null"
+  ],
+  "data.messages[].attachments[].media.largeThumbnailUrl": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.mediaType": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.mediumThumbnailUrl": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.smallThumbnailUrl": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.tags": [
+   "list"
+  ],
+  "data.messages[].attachments[].media.thumbnailUrl": [
+   "str"
+  ],
+  "data.messages[].attachments[].media.title": [
+   "null",
+   "str"
+  ],
+  "data.messages[].attachments[].name": [
+   "str"
+  ],
+  "data.messages[].attachments[].status": [
+   "str"
+  ],
+  "data.messages[].canReplyToMessage": [
+   "bool"
+  ],
+  "data.messages[].deletedAt": [
+   "null",
+   "str"
+  ],
+  "data.messages[].hasAttachments": [
+   "bool"
+  ],
+  "data.messages[].id": [
+   "str"
+  ],
+  "data.messages[].inviterName": [
+   "null",
+   "str"
+  ],
+  "data.messages[].leaverNames": [
+   "list",
+   "null"
+  ],
+  "data.messages[].leaverNames[]": [
+   "str"
+  ],
+  "data.messages[].messageType": [
+   "str"
+  ],
+  "data.messages[].newRecipients": [
+   "list",
+   "null"
+  ],
+  "data.messages[].newRecipients[]": [
+   "object"
+  ],
+  "data.messages[].newRecipients[].answerDirectlyName": [
+   "str"
+  ],
+  "data.messages[].newRecipients[].fullName": [
+   "str"
+  ],
+  "data.messages[].newRecipients[].institutionCode": [
+   "str"
+  ],
+  "data.messages[].newRecipients[].mailBoxOwner": [
+   "object"
+  ],
+  "data.messages[].newRecipients[].mailBoxOwner.id": [
+   "int"
+  ],
+  "data.messages[].newRecipients[].mailBoxOwner.isDeactivated": [
+   "bool"
+  ],
+  "data.messages[].newRecipients[].mailBoxOwner.mailBoxOwnerType": [
+   "str"
+  ],
+  "data.messages[].newRecipients[].mailBoxOwner.portalRole": [
+   "str"
+  ],
+  "data.messages[].newRecipients[].mailBoxOwner.profileId": [
+   "int"
+  ],
+  "data.messages[].newRecipients[].metadata": [
+   "str"
+  ],
+  "data.messages[].newRecipients[].profilePicture": [
+   "null"
+  ],
+  "data.messages[].newRecipients[].shortName": [
+   "str"
+  ],
+  "data.messages[].originalRecipients": [
+   "null"
+  ],
+  "data.messages[].pendingMedia": [
+   "bool"
+  ],
+  "data.messages[].sendDateTime": [
+   "str"
+  ],
+  "data.messages[].sender": [
+   "null",
+   "object"
+  ],
+  "data.messages[].sender.answerDirectlyName": [
+   "str"
+  ],
+  "data.messages[].sender.fullName": [
+   "str"
+  ],
+  "data.messages[].sender.institutionCode": [
+   "str"
+  ],
+  "data.messages[].sender.mailBoxOwner": [
+   "object"
+  ],
+  "data.messages[].sender.mailBoxOwner.id": [
+   "int"
+  ],
+  "data.messages[].sender.mailBoxOwner.isDeactivated": [
+   "bool"
+  ],
+  "data.messages[].sender.mailBoxOwner.mailBoxOwnerType": [
+   "str"
+  ],
+  "data.messages[].sender.mailBoxOwner.portalRole": [
+   "str"
+  ],
+  "data.messages[].sender.mailBoxOwner.profileId": [
+   "int"
+  ],
+  "data.messages[].sender.metadata": [
+   "str"
+  ],
+  "data.messages[].sender.profilePicture": [
+   "null",
+   "object"
+  ],
+  "data.messages[].sender.profilePicture.url": [
+   "str"
+  ],
+  "data.messages[].sender.shortName": [
+   "str"
+  ],
+  "data.messages[].text": [
+   "null",
+   "object"
+  ],
+  "data.messages[].text.html": [
+   "str"
+  ],
+  "data.moreMessagesExist": [
+   "bool"
+  ],
+  "data.muted": [
+   "bool"
+  ],
+  "data.page": [
+   "int"
+  ],
+  "data.recipients": [
+   "list"
+  ],
+  "data.recipients[]": [
+   "object"
+  ],
+  "data.recipients[].answerDirectlyName": [
+   "str"
+  ],
+  "data.recipients[].deletedAt": [
+   "null"
+  ],
+  "data.recipients[].fullName": [
+   "str"
+  ],
+  "data.recipients[].lastReadMessageId": [
+   "null",
+   "str"
+  ],
+  "data.recipients[].lastReadTimestamp": [
+   "null",
+   "str"
+  ],
+  "data.recipients[].leaveTime": [
+   "null",
+   "str"
+  ],
+  "data.recipients[].mailBoxOwner": [
+   "object"
+  ],
+  "data.recipients[].mailBoxOwner.id": [
+   "int"
+  ],
+  "data.recipients[].mailBoxOwner.isDeactivated": [
+   "bool"
+  ],
+  "data.recipients[].mailBoxOwner.mailBoxOwnerType": [
+   "str"
+  ],
+  "data.recipients[].mailBoxOwner.portalRole": [
+   "str"
+  ],
+  "data.recipients[].mailBoxOwner.profileId": [
+   "int"
+  ],
+  "data.recipients[].metadata": [
+   "str"
+  ],
+  "data.recipients[].profilePicture": [
+   "null",
+   "object"
+  ],
+  "data.recipients[].profilePicture.bucket": [
+   "str"
+  ],
+  "data.recipients[].profilePicture.id": [
+   "int"
+  ],
+  "data.recipients[].profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.recipients[].profilePicture.key": [
+   "str"
+  ],
+  "data.recipients[].profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.recipients[].profilePicture.url": [
+   "str"
+  ],
+  "data.recipients[].shortName": [
+   "str"
+  ],
+  "data.sensitive": [
+   "bool"
+  ],
+  "data.subject": [
+   "str"
+  ],
+  "data.threadCreator": [
+   "object"
+  ],
+  "data.threadCreator.answerDirectlyName": [
+   "str"
+  ],
+  "data.threadCreator.fullName": [
+   "str"
+  ],
+  "data.threadCreator.institutionCode": [
+   "str"
+  ],
+  "data.threadCreator.mailBoxOwner": [
+   "object"
+  ],
+  "data.threadCreator.mailBoxOwner.id": [
+   "int"
+  ],
+  "data.threadCreator.mailBoxOwner.isDeactivated": [
+   "bool"
+  ],
+  "data.threadCreator.mailBoxOwner.mailBoxOwnerType": [
+   "str"
+  ],
+  "data.threadCreator.mailBoxOwner.portalRole": [
+   "str"
+  ],
+  "data.threadCreator.mailBoxOwner.profileId": [
+   "int"
+  ],
+  "data.threadCreator.metadata": [
+   "str"
+  ],
+  "data.threadCreator.profilePicture": [
+   "null",
+   "object"
+  ],
+  "data.threadCreator.profilePicture.url": [
+   "str"
+  ],
+  "data.threadCreator.shortName": [
+   "str"
+  ],
+  "data.threadEntityLinkDto": [
+   "object"
+  ],
+  "data.threadEntityLinkDto.entityId": [
+   "null"
+  ],
+  "data.threadEntityLinkDto.threadType": [
+   "str"
+  ],
+  "data.threadStartedDateTime": [
+   "str"
+  ],
+  "data.totalMessageCount": [
+   "int"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
+ "GET messaging.getThreads": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "object"
+  ],
+  "data.moreMessagesExist": [
+   "bool"
+  ],
+  "data.page": [
+   "int"
+  ],
+  "data.threads": [
+   "list"
+  ],
+  "data.threads[]": [
+   "object"
+  ],
+  "data.threads[].creator": [
+   "object"
+  ],
+  "data.threads[].creator.answerDirectlyName": [
+   "str"
+  ],
+  "data.threads[].creator.fullName": [
+   "str"
+  ],
+  "data.threads[].creator.mailBoxOwner": [
+   "object"
+  ],
+  "data.threads[].creator.mailBoxOwner.id": [
+   "int"
+  ],
+  "data.threads[].creator.mailBoxOwner.isDeactivated": [
+   "bool"
+  ],
+  "data.threads[].creator.mailBoxOwner.mailBoxOwnerType": [
+   "str"
+  ],
+  "data.threads[].creator.mailBoxOwner.portalRole": [
+   "str"
+  ],
+  "data.threads[].creator.mailBoxOwner.profileId": [
+   "int"
+  ],
+  "data.threads[].creator.metadata": [
+   "str"
+  ],
+  "data.threads[].extraRecipientsCount": [
+   "int"
+  ],
+  "data.threads[].folderId": [
+   "null"
+  ],
+  "data.threads[].folderType": [
+   "str"
+  ],
+  "data.threads[].id": [
+   "int"
+  ],
+  "data.threads[].institutionCode": [
+   "str"
+  ],
+  "data.threads[].isArchived": [
+   "bool"
+  ],
+  "data.threads[].isThreadOrSubscriptionDeleted": [
+   "bool"
+  ],
+  "data.threads[].lastReadMessageId": [
+   "str"
+  ],
+  "data.threads[].latestMessage": [
+   "object"
+  ],
+  "data.threads[].latestMessage.id": [
+   "str"
+  ],
+  "data.threads[].latestMessage.sendDateTime": [
+   "str"
+  ],
+  "data.threads[].latestMessage.text": [
+   "object"
+  ],
+  "data.threads[].latestMessage.text.html": [
+   "str"
+  ],
+  "data.threads[].leaveTime": [
+   "null",
+   "str"
+  ],
+  "data.threads[].mailBoxOwner": [
+   "object"
+  ],
+  "data.threads[].mailBoxOwner.id": [
+   "int"
+  ],
+  "data.threads[].mailBoxOwner.isDeactivated": [
+   "bool"
+  ],
+  "data.threads[].mailBoxOwner.mailBoxOwnerType": [
+   "str"
+  ],
+  "data.threads[].mailBoxOwner.portalRole": [
+   "str"
+  ],
+  "data.threads[].mailBoxOwner.profileId": [
+   "int"
+  ],
+  "data.threads[].marked": [
+   "bool"
+  ],
+  "data.threads[].muted": [
+   "bool"
+  ],
+  "data.threads[].numberOfBundleItems": [
+   "null"
+  ],
+  "data.threads[].primarySubscriptionId": [
+   "null"
+  ],
+  "data.threads[].read": [
+   "bool"
+  ],
+  "data.threads[].recipients": [
+   "list"
+  ],
+  "data.threads[].recipients[]": [
+   "object"
+  ],
+  "data.threads[].recipients[].answerDirectlyName": [
+   "str"
+  ],
+  "data.threads[].recipients[].deletedAt": [
+   "null"
+  ],
+  "data.threads[].recipients[].fullName": [
+   "str"
+  ],
+  "data.threads[].recipients[].lastReadMessageId": [
+   "null",
+   "str"
+  ],
+  "data.threads[].recipients[].lastReadTimestamp": [
+   "null",
+   "str"
+  ],
+  "data.threads[].recipients[].leaveTime": [
+   "null"
+  ],
+  "data.threads[].recipients[].mailBoxOwner": [
+   "object"
+  ],
+  "data.threads[].recipients[].mailBoxOwner.id": [
+   "int"
+  ],
+  "data.threads[].recipients[].mailBoxOwner.isDeactivated": [
+   "bool"
+  ],
+  "data.threads[].recipients[].mailBoxOwner.mailBoxOwnerType": [
+   "str"
+  ],
+  "data.threads[].recipients[].mailBoxOwner.portalRole": [
+   "str"
+  ],
+  "data.threads[].recipients[].mailBoxOwner.profileId": [
+   "int"
+  ],
+  "data.threads[].recipients[].metadata": [
+   "str"
+  ],
+  "data.threads[].recipients[].profilePicture": [
+   "null",
+   "object"
+  ],
+  "data.threads[].recipients[].profilePicture.bucket": [
+   "str"
+  ],
+  "data.threads[].recipients[].profilePicture.id": [
+   "int"
+  ],
+  "data.threads[].recipients[].profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.threads[].recipients[].profilePicture.key": [
+   "str"
+  ],
+  "data.threads[].recipients[].profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.threads[].recipients[].profilePicture.url": [
+   "str"
+  ],
+  "data.threads[].recipients[].shortName": [
+   "str"
+  ],
+  "data.threads[].regardingChildren": [
+   "list"
+  ],
+  "data.threads[].regardingChildren[]": [
+   "object"
+  ],
+  "data.threads[].regardingChildren[].displayName": [
+   "str"
+  ],
+  "data.threads[].regardingChildren[].profileId": [
+   "int"
+  ],
+  "data.threads[].regardingChildren[].profilePicture": [
+   "object"
+  ],
+  "data.threads[].regardingChildren[].profilePicture.bucket": [
+   "str"
+  ],
+  "data.threads[].regardingChildren[].profilePicture.id": [
+   "int"
+  ],
+  "data.threads[].regardingChildren[].profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.threads[].regardingChildren[].profilePicture.key": [
+   "str"
+  ],
+  "data.threads[].regardingChildren[].profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.threads[].regardingChildren[].profilePicture.url": [
+   "str"
+  ],
+  "data.threads[].regardingChildren[].shortName": [
+   "str"
+  ],
+  "data.threads[].sensitive": [
+   "bool"
+  ],
+  "data.threads[].startedTime": [
+   "str"
+  ],
+  "data.threads[].subject": [
+   "str"
+  ],
+  "data.threads[].subscriptionId": [
+   "int"
+  ],
+  "data.threads[].subscriptionType": [
+   "str"
+  ],
+  "data.threads[].threadEntityLinkDto": [
+   "object"
+  ],
+  "data.threads[].threadEntityLinkDto.entityId": [
+   "null"
+  ],
+  "data.threads[].threadEntityLinkDto.threadType": [
+   "str"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
+ "GET notifications.getNotificationsForActiveProfile": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "list"
+  ],
+  "data[]": [
+   "object"
+  ],
+  "data[].albumId": [
+   "int"
+  ],
+  "data[].albumName": [
+   "null"
+  ],
+  "data[].endDate": [
+   "str"
+  ],
+  "data[].eventId": [
+   "int"
+  ],
+  "data[].expires": [
+   "str"
+  ],
+  "data[].folderId": [
+   "null"
+  ],
+  "data[].institutionCode": [
+   "null",
+   "str"
+  ],
+  "data[].institutionProfileId": [
+   "int"
+  ],
+  "data[].isPresenceTimesRequired": [
+   "bool"
+  ],
+  "data[].mediaId": [
+   "int"
+  ],
+  "data[].mediaIds": [
+   "list"
+  ],
+  "data[].messageText": [
+   "str"
+  ],
+  "data[].noteToGuardians": [
+   "str"
+  ],
+  "data[].notificationArea": [
+   "str"
+  ],
+  "data[].notificationEventType": [
+   "str"
+  ],
+  "data[].notificationId": [
+   "str"
+  ],
+  "data[].notificationType": [
+   "str"
+  ],
+  "data[].relatedChildInstitutionProfileId": [
+   "int",
+   "null"
+  ],
+  "data[].relatedChildName": [
+   "null",
+   "str"
+  ],
+  "data[].relatedInstitution": [
+   "null"
+  ],
+  "data[].responseDeadline": [
+   "str"
+  ],
+  "data[].senderName": [
+   "str"
+  ],
+  "data[].startDate": [
+   "str"
+  ],
+  "data[].threadId": [
+   "int"
+  ],
+  "data[].triggered": [
+   "str"
+  ],
+  "data[].vacationRegistrationResponseId": [
+   "int"
+  ],
+  "data[].vacationRequestName": [
+   "str"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
+ "GET presence.getDailyOverview": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "list"
+  ],
+  "data[]": [
+   "object"
+  ],
+  "data[].activityType": [
+   "int"
+  ],
+  "data[].checkInTime": [
+   "str"
+  ],
+  "data[].checkOutTime": [
+   "null",
+   "str"
+  ],
+  "data[].comment": [
+   "null"
+  ],
+  "data[].editablePresenceStates": [
+   "list"
+  ],
+  "data[].entryTime": [
+   "str"
+  ],
+  "data[].exitTime": [
+   "str"
+  ],
+  "data[].exitWith": [
+   "str"
+  ],
+  "data[].id": [
+   "int"
+  ],
+  "data[].institutionProfile": [
+   "object"
+  ],
+  "data[].institutionProfile.id": [
+   "int"
+  ],
+  "data[].institutionProfile.institutionCode": [
+   "str"
+  ],
+  "data[].institutionProfile.institutionName": [
+   "str"
+  ],
+  "data[].institutionProfile.institutionRole": [
+   "str"
+  ],
+  "data[].institutionProfile.mainGroup": [
+   "null"
+  ],
+  "data[].institutionProfile.metadata": [
+   "str"
+  ],
+  "data[].institutionProfile.name": [
+   "str"
+  ],
+  "data[].institutionProfile.profileId": [
+   "int"
+  ],
+  "data[].institutionProfile.profilePicture": [
+   "object"
+  ],
+  "data[].institutionProfile.profilePicture.bucket": [
+   "str"
+  ],
+  "data[].institutionProfile.profilePicture.id": [
+   "int"
+  ],
+  "data[].institutionProfile.profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data[].institutionProfile.profilePicture.key": [
+   "str"
+  ],
+  "data[].institutionProfile.profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data[].institutionProfile.profilePicture.url": [
+   "str"
+  ],
+  "data[].institutionProfile.role": [
+   "str"
+  ],
+  "data[].institutionProfile.shortName": [
+   "str"
+  ],
+  "data[].isDefaultEntryTime": [
+   "bool"
+  ],
+  "data[].isDefaultExitTime": [
+   "bool"
+  ],
+  "data[].isPlannedTimesOutsideOpeningHours": [
+   "bool"
+  ],
+  "data[].location": [
+   "null"
+  ],
+  "data[].mainGroup": [
+   "object"
+  ],
+  "data[].mainGroup.allowMembersToBeShown": [
+   "bool"
+  ],
+  "data[].mainGroup.id": [
+   "int"
+  ],
+  "data[].mainGroup.institutionCode": [
+   "str"
+  ],
+  "data[].mainGroup.institutionName": [
+   "str"
+  ],
+  "data[].mainGroup.isDeactivated": [
+   "bool"
+  ],
+  "data[].mainGroup.mainGroup": [
+   "bool"
+  ],
+  "data[].mainGroup.name": [
+   "str"
+  ],
+  "data[].mainGroup.shortName": [
+   "str"
+  ],
+  "data[].mainGroup.uniGroupType": [
+   "str"
+  ],
+  "data[].selfDeciderEndTime": [
+   "null"
+  ],
+  "data[].selfDeciderStartTime": [
+   "null"
+  ],
+  "data[].sleepIntervals": [
+   "list"
+  ],
+  "data[].spareTimeActivity": [
+   "null"
+  ],
+  "data[].status": [
+   "int"
+  ],
+  "data[].vacationNote": [
+   "null"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
+ "GET profiles.getProfileContext": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "object"
+  ],
+  "data.groupHomes": [
+   "list"
+  ],
+  "data.homePhonenumber": [
+   "null"
+  ],
+  "data.id": [
+   "int"
+  ],
+  "data.institutionProfile": [
+   "object"
+  ],
+  "data.institutionProfile.address": [
+   "object"
+  ],
+  "data.institutionProfile.address.id": [
+   "int"
+  ],
+  "data.institutionProfile.address.postalCode": [
+   "int"
+  ],
+  "data.institutionProfile.address.postalDistrict": [
+   "str"
+  ],
+  "data.institutionProfile.address.street": [
+   "str"
+  ],
+  "data.institutionProfile.birthday": [
+   "str"
+  ],
+  "data.institutionProfile.communicationBlock": [
+   "bool"
+  ],
+  "data.institutionProfile.delegatedCalendarProfiles": [
+   "list"
+  ],
+  "data.institutionProfile.email": [
+   "str"
+  ],
+  "data.institutionProfile.encryptionKey": [
+   "str"
+  ],
+  "data.institutionProfile.firstName": [
+   "str"
+  ],
+  "data.institutionProfile.fullName": [
+   "str"
+  ],
+  "data.institutionProfile.gender": [
+   "str"
+  ],
+  "data.institutionProfile.id": [
+   "int"
+  ],
+  "data.institutionProfile.institution": [
+   "object"
+  ],
+  "data.institutionProfile.institution.administrativeAuthority": [
+   "object"
+  ],
+  "data.institutionProfile.institution.administrativeAuthority.id": [
+   "int"
+  ],
+  "data.institutionProfile.institution.administrativeAuthority.institutionCodes": [
+   "list"
+  ],
+  "data.institutionProfile.institution.administrativeAuthority.name": [
+   "str"
+  ],
+  "data.institutionProfile.institution.institutionCode": [
+   "str"
+  ],
+  "data.institutionProfile.institution.institutionName": [
+   "str"
+  ],
+  "data.institutionProfile.institution.municipalityCode": [
+   "str"
+  ],
+  "data.institutionProfile.institution.municipalityName": [
+   "str"
+  ],
+  "data.institutionProfile.institution.type": [
+   "str"
+  ],
+  "data.institutionProfile.lastName": [
+   "str"
+  ],
+  "data.institutionProfile.mailBoxId": [
+   "int"
+  ],
+  "data.institutionProfile.mainGroupName": [
+   "null"
+  ],
+  "data.institutionProfile.metadata": [
+   "str"
+  ],
+  "data.institutionProfile.phone": [
+   "str"
+  ],
+  "data.institutionProfile.profileId": [
+   "int"
+  ],
+  "data.institutionProfile.profilePicture": [
+   "object"
+  ],
+  "data.institutionProfile.profilePicture.bucket": [
+   "str"
+  ],
+  "data.institutionProfile.profilePicture.id": [
+   "int"
+  ],
+  "data.institutionProfile.profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.institutionProfile.profilePicture.key": [
+   "str"
+  ],
+  "data.institutionProfile.profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.institutionProfile.profilePicture.url": [
+   "str"
+  ],
+  "data.institutionProfile.relations": [
+   "list"
+  ],
+  "data.institutionProfile.relations[]": [
+   "object"
+  ],
+  "data.institutionProfile.relations[].firstName": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].fullName": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].gender": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].id": [
+   "int"
+  ],
+  "data.institutionProfile.relations[].institution": [
+   "object"
+  ],
+  "data.institutionProfile.relations[].institution.administrativeAuthority": [
+   "object"
+  ],
+  "data.institutionProfile.relations[].institution.administrativeAuthority.id": [
+   "int"
+  ],
+  "data.institutionProfile.relations[].institution.administrativeAuthority.institutionCodes": [
+   "list"
+  ],
+  "data.institutionProfile.relations[].institution.administrativeAuthority.name": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].institution.institutionCode": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].institution.institutionName": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].institution.municipalityCode": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].institution.municipalityName": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].institution.type": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].lastName": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].mailBoxId": [
+   "int"
+  ],
+  "data.institutionProfile.relations[].mainGroupName": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].metadata": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].profileId": [
+   "int"
+  ],
+  "data.institutionProfile.relations[].profilePicture": [
+   "object"
+  ],
+  "data.institutionProfile.relations[].profilePicture.bucket": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].profilePicture.id": [
+   "int"
+  ],
+  "data.institutionProfile.relations[].profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.institutionProfile.relations[].profilePicture.key": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].profilePicture.url": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].role": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].shortName": [
+   "str"
+  ],
+  "data.institutionProfile.relations[].uniPersonId": [
+   "int"
+  ],
+  "data.institutionProfile.role": [
+   "str"
+  ],
+  "data.institutionProfile.shortName": [
+   "str"
+  ],
+  "data.institutionProfile.uniPersonId": [
+   "int"
+  ],
+  "data.institutions": [
+   "list"
+  ],
+  "data.institutions[]": [
+   "object"
+  ],
+  "data.institutions[].administrativeAuthority": [
+   "object"
+  ],
+  "data.institutions[].administrativeAuthority.id": [
+   "int"
+  ],
+  "data.institutions[].administrativeAuthority.institutionCodes": [
+   "list"
+  ],
+  "data.institutions[].administrativeAuthority.institutionCodes[]": [
+   "str"
+  ],
+  "data.institutions[].administrativeAuthority.name": [
+   "str"
+  ],
+  "data.institutions[].children": [
+   "list"
+  ],
+  "data.institutions[].children[]": [
+   "object"
+  ],
+  "data.institutions[].children[].hasCustodyOrExtendedAccess": [
+   "bool"
+  ],
+  "data.institutions[].children[].id": [
+   "int"
+  ],
+  "data.institutions[].children[].institutionCode": [
+   "str"
+  ],
+  "data.institutions[].children[].name": [
+   "str"
+  ],
+  "data.institutions[].children[].profileId": [
+   "int"
+  ],
+  "data.institutions[].children[].profilePicture": [
+   "object"
+  ],
+  "data.institutions[].children[].profilePicture.bucket": [
+   "str"
+  ],
+  "data.institutions[].children[].profilePicture.id": [
+   "int"
+  ],
+  "data.institutions[].children[].profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.institutions[].children[].profilePicture.key": [
+   "str"
+  ],
+  "data.institutions[].children[].profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.institutions[].children[].profilePicture.url": [
+   "str"
+  ],
+  "data.institutions[].children[].shortName": [
+   "str"
+  ],
+  "data.institutions[].children[].userId": [
+   "str"
+  ],
+  "data.institutions[].communicationBlock": [
+   "bool"
+  ],
+  "data.institutions[].groups": [
+   "list"
+  ],
+  "data.institutions[].groups[]": [
+   "object"
+  ],
+  "data.institutions[].groups[].dashboardEnabled": [
+   "bool"
+  ],
+  "data.institutions[].groups[].description": [
+   "str"
+  ],
+  "data.institutions[].groups[].endTime": [
+   "null"
+  ],
+  "data.institutions[].groups[].groupType": [
+   "str"
+  ],
+  "data.institutions[].groups[].id": [
+   "int"
+  ],
+  "data.institutions[].groups[].membershipId": [
+   "int",
+   "null"
+  ],
+  "data.institutions[].groups[].membershipType": [
+   "str"
+  ],
+  "data.institutions[].groups[].name": [
+   "str"
+  ],
+  "data.institutions[].groups[].role": [
+   "str"
+  ],
+  "data.institutions[].groups[].uniGroupId": [
+   "null",
+   "str"
+  ],
+  "data.institutions[].institutionCode": [
+   "str"
+  ],
+  "data.institutions[].institutionProfileId": [
+   "int"
+  ],
+  "data.institutions[].institutionRole": [
+   "str"
+  ],
+  "data.institutions[].institutionType": [
+   "str"
+  ],
+  "data.institutions[].mailboxId": [
+   "int"
+  ],
+  "data.institutions[].municipalityCode": [
+   "str"
+  ],
+  "data.institutions[].name": [
+   "str"
+  ],
+  "data.institutions[].permissions": [
+   "list"
+  ],
+  "data.institutions[].permissions[]": [
+   "object"
+  ],
+  "data.institutions[].permissions[].groupScopes": [
+   "list"
+  ],
+  "data.institutions[].permissions[].groupScopes[]": [
+   "int"
+  ],
+  "data.institutions[].permissions[].institutionScope": [
+   "bool"
+  ],
+  "data.institutions[].permissions[].permissionId": [
+   "int"
+  ],
+  "data.institutions[].permissions[].stepUp": [
+   "bool"
+  ],
+  "data.institutions[].shortName": [
+   "str"
+  ],
+  "data.isGroupHomeAdmin": [
+   "bool"
+  ],
+  "data.isSteppedUp": [
+   "bool"
+  ],
+  "data.loginPortalRole": [
+   "null"
+  ],
+  "data.mobilePhonenumber": [
+   "str"
+  ],
+  "data.municipalAdmin": [
+   "bool"
+  ],
+  "data.municipalGroups": [
+   "list"
+  ],
+  "data.municipalGroups[]": [
+   "object"
+  ],
+  "data.municipalGroups[].dashboardEnabled": [
+   "bool"
+  ],
+  "data.municipalGroups[].description": [
+   "str"
+  ],
+  "data.municipalGroups[].endTime": [
+   "null"
+  ],
+  "data.municipalGroups[].groupType": [
+   "str"
+  ],
+  "data.municipalGroups[].id": [
+   "int"
+  ],
+  "data.municipalGroups[].membershipId": [
+   "null"
+  ],
+  "data.municipalGroups[].membershipInstitutions": [
+   "list"
+  ],
+  "data.municipalGroups[].membershipInstitutions[]": [
+   "str"
+  ],
+  "data.municipalGroups[].membershipType": [
+   "str"
+  ],
+  "data.municipalGroups[].name": [
+   "str"
+  ],
+  "data.municipalGroups[].role": [
+   "str"
+  ],
+  "data.municipalGroups[].uniGroupId": [
+   "null"
+  ],
+  "data.pageConfiguration": [
+   "object"
+  ],
+  "data.pageConfiguration.editorPluginDetails": [
+   "list"
+  ],
+  "data.pageConfiguration.editorPluginDetails[]": [
+   "object"
+  ],
+  "data.pageConfiguration.editorPluginDetails[].institutionType": [
+   "str"
+  ],
+  "data.pageConfiguration.editorPluginDetails[].municipalityCode": [
+   "str"
+  ],
+  "data.pageConfiguration.editorPluginDetails[].pluginName": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations": [
+   "list"
+  ],
+  "data.pageConfiguration.moduleConfigurations[]": [
+   "object"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].aggregatedDisplayMode": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].centralDisplayMode": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].id": [
+   "int"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].institutionDisplayMode": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].institutionRole": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].institutionalRestrictedGroups": [
+   "list"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].institutionalRestrictedGroups[]": [
+   "object"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].institutionalRestrictedGroups[].allowMembersToBeShown": [
+   "bool"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].institutionalRestrictedGroups[].id": [
+   "int"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].institutionalRestrictedGroups[].institutionCode": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].institutionalRestrictedGroups[].institutionName": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].institutionalRestrictedGroups[].isDeactivated": [
+   "bool"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].institutionalRestrictedGroups[].mainGroup": [
+   "bool"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].institutionalRestrictedGroups[].name": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].institutionalRestrictedGroups[].shortName": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].institutionalRestrictedGroups[].uniGroupType": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].module": [
+   "object"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].module.canBePlacedOnGroup": [
+   "bool"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].module.description": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].module.icon": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].module.id": [
+   "int"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].module.name": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].module.type": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].module.url": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].municipalityDisplayMode": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].order": [
+   "int"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].placement": [
+   "str"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].restrictedGroups": [
+   "list"
+  ],
+  "data.pageConfiguration.moduleConfigurations[].scope": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations": [
+   "list"
+  ],
+  "data.pageConfiguration.widgetConfigurations[]": [
+   "object"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].aggregatedDisplayMode": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].centralDisplayMode": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].id": [
+   "int"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].institutionDisplayMode": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].institutionRole": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].municipalityDisplayMode": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].order": [
+   "int"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].placement": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].restrictedGroups": [
+   "list"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].scope": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget": [
+   "object"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.canAccessOnMobile": [
+   "bool"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.canBePlacedInsideModule": [
+   "bool"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.canBePlacedOnFullPage": [
+   "bool"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.canBePlacedOnGroup": [
+   "bool"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.description": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.icon": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.iconEmployee": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.iconHover": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.id": [
+   "int"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.isPilot": [
+   "bool"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.isSecure": [
+   "bool"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.name": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.supportsTestMode": [
+   "bool"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.type": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.url": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.widgetId": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.widgetSupplier": [
+   "str"
+  ],
+  "data.pageConfiguration.widgetConfigurations[].widget.widgetVersion": [
+   "str"
+  ],
+  "data.portalRole": [
+   "str"
+  ],
+  "data.supportRole": [
+   "bool"
+  ],
+  "data.userId": [
+   "str"
+  ],
+  "data.workPhonenumber": [
+   "null"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
+ "GET profiles.getProfileMasterData": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "object"
+  ],
+  "data.age18AndOlder": [
+   "null"
+  ],
+  "data.children": [
+   "list"
+  ],
+  "data.contactInfoEditable": [
+   "null"
+  ],
+  "data.displayName": [
+   "str"
+  ],
+  "data.institutionProfiles": [
+   "list"
+  ],
+  "data.institutionProfiles[]": [
+   "object"
+  ],
+  "data.institutionProfiles[].accessLevel": [
+   "null"
+  ],
+  "data.institutionProfiles[].address": [
+   "object"
+  ],
+  "data.institutionProfiles[].address.id": [
+   "int"
+  ],
+  "data.institutionProfiles[].address.postalCode": [
+   "int"
+  ],
+  "data.institutionProfiles[].address.postalDistrict": [
+   "str"
+  ],
+  "data.institutionProfiles[].address.street": [
+   "str"
+  ],
+  "data.institutionProfiles[].alias": [
+   "bool"
+  ],
+  "data.institutionProfiles[].aulaEmail": [
+   "null"
+  ],
+  "data.institutionProfiles[].birthday": [
+   "null"
+  ],
+  "data.institutionProfiles[].communicationBlocked": [
+   "bool"
+  ],
+  "data.institutionProfiles[].contactType": [
+   "str"
+  ],
+  "data.institutionProfiles[].currentUserCanDeleteProfilePicture": [
+   "bool"
+  ],
+  "data.institutionProfiles[].currentUserCanEditContactInformation": [
+   "bool"
+  ],
+  "data.institutionProfiles[].currentUserCanEditProfileDescription": [
+   "bool"
+  ],
+  "data.institutionProfiles[].currentUserCanEditProfilePicture": [
+   "bool"
+  ],
+  "data.institutionProfiles[].currentUserCanSeeProfileDescription": [
+   "bool"
+  ],
+  "data.institutionProfiles[].currentUserCanViewContactInformation": [
+   "bool"
+  ],
+  "data.institutionProfiles[].deactivated": [
+   "bool"
+  ],
+  "data.institutionProfiles[].email": [
+   "str"
+  ],
+  "data.institutionProfiles[].firstName": [
+   "str"
+  ],
+  "data.institutionProfiles[].fullName": [
+   "str"
+  ],
+  "data.institutionProfiles[].gender": [
+   "str"
+  ],
+  "data.institutionProfiles[].groupHomeId": [
+   "null"
+  ],
+  "data.institutionProfiles[].groups": [
+   "list"
+  ],
+  "data.institutionProfiles[].hasBlockedCommunicationChannels": [
+   "bool"
+  ],
+  "data.institutionProfiles[].hasCustody": [
+   "null"
+  ],
+  "data.institutionProfiles[].homePhoneNumber": [
+   "null"
+  ],
+  "data.institutionProfiles[].id": [
+   "int"
+  ],
+  "data.institutionProfiles[].institutionCode": [
+   "str"
+  ],
+  "data.institutionProfiles[].institutionName": [
+   "str"
+  ],
+  "data.institutionProfiles[].institutionProfileDescriptions": [
+   "null"
+  ],
+  "data.institutionProfiles[].institutionRole": [
+   "str"
+  ],
+  "data.institutionProfiles[].institutionType": [
+   "str"
+  ],
+  "data.institutionProfiles[].isInternalProfilePicture": [
+   "bool"
+  ],
+  "data.institutionProfiles[].isPrimary": [
+   "bool"
+  ],
+  "data.institutionProfiles[].lastActivity": [
+   "null"
+  ],
+  "data.institutionProfiles[].lastName": [
+   "str"
+  ],
+  "data.institutionProfiles[].mainGroup": [
+   "null"
+  ],
+  "data.institutionProfiles[].metadata": [
+   "str"
+  ],
+  "data.institutionProfiles[].mobilePhoneNumber": [
+   "str"
+  ],
+  "data.institutionProfiles[].municipalityCode": [
+   "str"
+  ],
+  "data.institutionProfiles[].municipalityName": [
+   "str"
+  ],
+  "data.institutionProfiles[].newInstitutionProfile": [
+   "bool"
+  ],
+  "data.institutionProfiles[].profileId": [
+   "int"
+  ],
+  "data.institutionProfiles[].profilePicture": [
+   "object"
+  ],
+  "data.institutionProfiles[].profilePicture.bucket": [
+   "str"
+  ],
+  "data.institutionProfiles[].profilePicture.id": [
+   "int"
+  ],
+  "data.institutionProfiles[].profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.institutionProfiles[].profilePicture.key": [
+   "str"
+  ],
+  "data.institutionProfiles[].profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.institutionProfiles[].profilePicture.url": [
+   "str"
+  ],
+  "data.institutionProfiles[].profilePictureUrl": [
+   "null"
+  ],
+  "data.institutionProfiles[].profileStatus": [
+   "str"
+  ],
+  "data.institutionProfiles[].relation": [
+   "null"
+  ],
+  "data.institutionProfiles[].relations": [
+   "list"
+  ],
+  "data.institutionProfiles[].relations[]": [
+   "object"
+  ],
+  "data.institutionProfiles[].relations[].accessLevel": [
+   "int"
+  ],
+  "data.institutionProfiles[].relations[].address": [
+   "object"
+  ],
+  "data.institutionProfiles[].relations[].address.id": [
+   "int"
+  ],
+  "data.institutionProfiles[].relations[].address.postalCode": [
+   "int"
+  ],
+  "data.institutionProfiles[].relations[].address.postalDistrict": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].address.street": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].alias": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].aulaEmail": [
+   "null"
+  ],
+  "data.institutionProfiles[].relations[].birthday": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].communicationBlocked": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].contactType": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].currentUserCanDeleteProfilePicture": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].currentUserCanEditContactInformation": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].currentUserCanEditProfileDescription": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].currentUserCanEditProfilePicture": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].currentUserCanSeeProfileDescription": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].currentUserCanViewContactInformation": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].deactivated": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].email": [
+   "null"
+  ],
+  "data.institutionProfiles[].relations[].firstName": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].fullName": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].gender": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].groups": [
+   "list"
+  ],
+  "data.institutionProfiles[].relations[].hasBlockedCommunicationChannels": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].hasCustody": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].homePhoneNumber": [
+   "null"
+  ],
+  "data.institutionProfiles[].relations[].id": [
+   "int"
+  ],
+  "data.institutionProfiles[].relations[].institutionCode": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].institutionName": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].institutionProfileDescriptions": [
+   "null"
+  ],
+  "data.institutionProfiles[].relations[].institutionRole": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].institutionType": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].isInternalProfilePicture": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].isPrimary": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].lastActivity": [
+   "null"
+  ],
+  "data.institutionProfiles[].relations[].lastName": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].mainGroup": [
+   "object"
+  ],
+  "data.institutionProfiles[].relations[].mainGroup.allowMembersToBeShown": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].mainGroup.id": [
+   "int"
+  ],
+  "data.institutionProfiles[].relations[].mainGroup.institutionCode": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].mainGroup.institutionName": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].mainGroup.isDeactivated": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].mainGroup.mainGroup": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].mainGroup.name": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].mainGroup.shortName": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].mainGroup.uniGroupType": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].metadata": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].mobilePhoneNumber": [
+   "null"
+  ],
+  "data.institutionProfiles[].relations[].municipalityCode": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].municipalityName": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].newInstitutionProfile": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].profileId": [
+   "int"
+  ],
+  "data.institutionProfiles[].relations[].profilePicture": [
+   "object"
+  ],
+  "data.institutionProfiles[].relations[].profilePicture.bucket": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].profilePicture.id": [
+   "int"
+  ],
+  "data.institutionProfiles[].relations[].profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].profilePicture.key": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].profilePicture.url": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].profilePictureUrl": [
+   "null"
+  ],
+  "data.institutionProfiles[].relations[].profileStatus": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].relation": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].role": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].shortName": [
+   "str"
+  ],
+  "data.institutionProfiles[].relations[].shouldShowDeclineConsentTwoWarning": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].userHasGivenConsentToShowContactInformation": [
+   "bool"
+  ],
+  "data.institutionProfiles[].relations[].workPhoneNumber": [
+   "null"
+  ],
+  "data.institutionProfiles[].role": [
+   "str"
+  ],
+  "data.institutionProfiles[].shortName": [
+   "str"
+  ],
+  "data.institutionProfiles[].shouldShowDeclineConsentTwoWarning": [
+   "bool"
+  ],
+  "data.institutionProfiles[].userHasGivenConsentToShowContactInformation": [
+   "bool"
+  ],
+  "data.institutionProfiles[].workPhoneNumber": [
+   "null"
+  ],
+  "data.isInternalProfilePicture": [
+   "bool"
+  ],
+  "data.overConsentAge": [
+   "bool"
+  ],
+  "data.profileId": [
+   "int"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
+ "GET profiles.getProfilesByLogin": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "object"
+  ],
+  "data.profiles": [
+   "list"
+  ],
+  "data.profiles[]": [
+   "object"
+  ],
+  "data.profiles[].age18AndOlder": [
+   "null"
+  ],
+  "data.profiles[].children": [
+   "list"
+  ],
+  "data.profiles[].children[]": [
+   "object"
+  ],
+  "data.profiles[].children[].hasCustodyOrExtendedAccess": [
+   "bool"
+  ],
+  "data.profiles[].children[].id": [
+   "int"
+  ],
+  "data.profiles[].children[].institutionCode": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile": [
+   "object"
+  ],
+  "data.profiles[].children[].institutionProfile.accessLevel": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.address": [
+   "object"
+  ],
+  "data.profiles[].children[].institutionProfile.address.id": [
+   "int"
+  ],
+  "data.profiles[].children[].institutionProfile.address.postalCode": [
+   "int"
+  ],
+  "data.profiles[].children[].institutionProfile.address.postalDistrict": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.address.street": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.alias": [
+   "bool"
+  ],
+  "data.profiles[].children[].institutionProfile.aulaEmail": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.birthday": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.communicationBlocked": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.contactType": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.currentUserCanDeleteProfilePicture": [
+   "bool"
+  ],
+  "data.profiles[].children[].institutionProfile.currentUserCanEditContactInformation": [
+   "bool"
+  ],
+  "data.profiles[].children[].institutionProfile.currentUserCanEditProfileDescription": [
+   "bool"
+  ],
+  "data.profiles[].children[].institutionProfile.currentUserCanEditProfilePicture": [
+   "bool"
+  ],
+  "data.profiles[].children[].institutionProfile.currentUserCanSeeProfileDescription": [
+   "bool"
+  ],
+  "data.profiles[].children[].institutionProfile.currentUserCanViewContactInformation": [
+   "bool"
+  ],
+  "data.profiles[].children[].institutionProfile.deactivated": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.email": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.firstName": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.fullName": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.gender": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.groups": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.hasBlockedCommunicationChannels": [
+   "bool"
+  ],
+  "data.profiles[].children[].institutionProfile.hasCustody": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.homePhoneNumber": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.id": [
+   "int"
+  ],
+  "data.profiles[].children[].institutionProfile.institutionCode": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.institutionName": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.institutionProfileDescriptions": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.institutionRole": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.institutionType": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.isInternalProfilePicture": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.isPrimary": [
+   "bool"
+  ],
+  "data.profiles[].children[].institutionProfile.lastActivity": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.lastName": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.mainGroup": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.metadata": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.mobilePhoneNumber": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.municipalityCode": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.municipalityName": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.newInstitutionProfile": [
+   "bool"
+  ],
+  "data.profiles[].children[].institutionProfile.profileId": [
+   "int"
+  ],
+  "data.profiles[].children[].institutionProfile.profilePicture": [
+   "object"
+  ],
+  "data.profiles[].children[].institutionProfile.profilePicture.bucket": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.profilePicture.id": [
+   "int"
+  ],
+  "data.profiles[].children[].institutionProfile.profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.profiles[].children[].institutionProfile.profilePicture.key": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.profilePicture.url": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.profilePictureUrl": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.profileStatus": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.relation": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.role": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.shortName": [
+   "str"
+  ],
+  "data.profiles[].children[].institutionProfile.shouldShowDeclineConsentTwoWarning": [
+   "null"
+  ],
+  "data.profiles[].children[].institutionProfile.userHasGivenConsentToShowContactInformation": [
+   "bool"
+  ],
+  "data.profiles[].children[].institutionProfile.workPhoneNumber": [
+   "null"
+  ],
+  "data.profiles[].children[].name": [
+   "str"
+  ],
+  "data.profiles[].children[].profileId": [
+   "int"
+  ],
+  "data.profiles[].children[].profilePicture": [
+   "object"
+  ],
+  "data.profiles[].children[].profilePicture.bucket": [
+   "str"
+  ],
+  "data.profiles[].children[].profilePicture.id": [
+   "int"
+  ],
+  "data.profiles[].children[].profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.profiles[].children[].profilePicture.key": [
+   "str"
+  ],
+  "data.profiles[].children[].profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.profiles[].children[].profilePicture.url": [
+   "str"
+  ],
+  "data.profiles[].children[].shortName": [
+   "str"
+  ],
+  "data.profiles[].children[].userId": [
+   "str"
+  ],
+  "data.profiles[].contactInfoEditable": [
+   "null"
+  ],
+  "data.profiles[].displayName": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles": [
+   "list"
+  ],
+  "data.profiles[].institutionProfiles[]": [
+   "object"
+  ],
+  "data.profiles[].institutionProfiles[].accessLevel": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].address": [
+   "object"
+  ],
+  "data.profiles[].institutionProfiles[].address.id": [
+   "int"
+  ],
+  "data.profiles[].institutionProfiles[].address.postalCode": [
+   "int"
+  ],
+  "data.profiles[].institutionProfiles[].address.postalDistrict": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].address.street": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].alias": [
+   "bool"
+  ],
+  "data.profiles[].institutionProfiles[].aulaEmail": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].birthday": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].communicationBlocked": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].contactType": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].currentUserCanDeleteProfilePicture": [
+   "bool"
+  ],
+  "data.profiles[].institutionProfiles[].currentUserCanEditContactInformation": [
+   "bool"
+  ],
+  "data.profiles[].institutionProfiles[].currentUserCanEditProfileDescription": [
+   "bool"
+  ],
+  "data.profiles[].institutionProfiles[].currentUserCanEditProfilePicture": [
+   "bool"
+  ],
+  "data.profiles[].institutionProfiles[].currentUserCanSeeProfileDescription": [
+   "bool"
+  ],
+  "data.profiles[].institutionProfiles[].currentUserCanViewContactInformation": [
+   "bool"
+  ],
+  "data.profiles[].institutionProfiles[].deactivated": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].email": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].firstName": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].fullName": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].gender": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].groups": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].hasBlockedCommunicationChannels": [
+   "bool"
+  ],
+  "data.profiles[].institutionProfiles[].hasCustody": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].homePhoneNumber": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].id": [
+   "int"
+  ],
+  "data.profiles[].institutionProfiles[].institutionCode": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].institutionName": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].institutionProfileDescriptions": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].institutionRole": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].institutionType": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].isInternalProfilePicture": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].isPrimary": [
+   "bool"
+  ],
+  "data.profiles[].institutionProfiles[].lastActivity": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].lastName": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].mainGroup": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].metadata": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].mobilePhoneNumber": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].municipalityCode": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].municipalityName": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].newInstitutionProfile": [
+   "bool"
+  ],
+  "data.profiles[].institutionProfiles[].profileId": [
+   "int"
+  ],
+  "data.profiles[].institutionProfiles[].profilePicture": [
+   "object"
+  ],
+  "data.profiles[].institutionProfiles[].profilePicture.bucket": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].profilePicture.id": [
+   "int"
+  ],
+  "data.profiles[].institutionProfiles[].profilePicture.isImageScalingPending": [
+   "bool"
+  ],
+  "data.profiles[].institutionProfiles[].profilePicture.key": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].profilePicture.scanningStatus": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].profilePicture.url": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].profilePictureUrl": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].profileStatus": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].relation": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].role": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].shortName": [
+   "str"
+  ],
+  "data.profiles[].institutionProfiles[].shouldShowDeclineConsentTwoWarning": [
+   "null"
+  ],
+  "data.profiles[].institutionProfiles[].userHasGivenConsentToShowContactInformation": [
+   "bool"
+  ],
+  "data.profiles[].institutionProfiles[].workPhoneNumber": [
+   "null"
+  ],
+  "data.profiles[].isLatestDataPolicyAccepted": [
+   "bool"
+  ],
+  "data.profiles[].overConsentAge": [
+   "null"
+  ],
+  "data.profiles[].portalRole": [
+   "str"
+  ],
+  "data.profiles[].profileId": [
+   "int"
+  ],
+  "data.profiles[].supportRole": [
+   "bool"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
+ "POST calendar.getEventsByProfileIdsAndResourceIds": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "list"
+  ],
+  "data[]": [
+   "object"
+  ],
+  "data[].addedToInstitutionCalendar": [
+   "bool"
+  ],
+  "data[].additionalResourceText": [
+   "null",
+   "str"
+  ],
+  "data[].additionalResources": [
+   "list"
+  ],
+  "data[].allDay": [
+   "bool"
+  ],
+  "data[].belongsToProfiles": [
+   "list"
+  ],
+  "data[].belongsToProfiles[]": [
+   "int"
+  ],
+  "data[].belongsToResources": [
+   "list"
+  ],
+  "data[].createdDateTime": [
+   "str"
+  ],
+  "data[].creatorInstProfileId": [
+   "int",
+   "null"
+  ],
+  "data[].creatorName": [
+   "null",
+   "str"
+  ],
+  "data[].creatorProfileId": [
+   "int",
+   "null"
+  ],
+  "data[].directlyRelated": [
+   "bool"
+  ],
+  "data[].endDateTime": [
+   "str"
+  ],
+  "data[].hasAttachments": [
+   "bool"
+  ],
+  "data[].id": [
+   "int"
+  ],
+  "data[].institutionCode": [
+   "null",
+   "str"
+  ],
+  "data[].institutionName": [
+   "null",
+   "str"
+  ],
+  "data[].invitedGroups": [
+   "list"
+  ],
+  "data[].invitedGroups[]": [
+   "object"
+  ],
+  "data[].invitedGroups[].allowMembersToBeShown": [
+   "bool"
+  ],
+  "data[].invitedGroups[].id": [
+   "int"
+  ],
+  "data[].invitedGroups[].institutionCode": [
+   "str"
+  ],
+  "data[].invitedGroups[].institutionName": [
+   "str"
+  ],
+  "data[].invitedGroups[].isDeactivated": [
+   "bool"
+  ],
+  "data[].invitedGroups[].mainGroup": [
+   "bool"
+  ],
+  "data[].invitedGroups[].name": [
+   "str"
+  ],
+  "data[].invitedGroups[].shortName": [
+   "str"
+  ],
+  "data[].invitedGroups[].uniGroupType": [
+   "str"
+  ],
+  "data[].lesson": [
+   "null",
+   "object"
+  ],
+  "data[].lesson.hasRelevantNote": [
+   "bool"
+  ],
+  "data[].lesson.lessonId": [
+   "str"
+  ],
+  "data[].lesson.lessonStatus": [
+   "str"
+  ],
+  "data[].lesson.participants": [
+   "list"
+  ],
+  "data[].lesson.participants[]": [
+   "object"
+  ],
+  "data[].lesson.participants[].participantRole": [
+   "str"
+  ],
+  "data[].lesson.participants[].teacherId": [
+   "int"
+  ],
+  "data[].lesson.participants[].teacherInitials": [
+   "str"
+  ],
+  "data[].lesson.participants[].teacherName": [
+   "str"
+  ],
+  "data[].oldAllDay": [
+   "null"
+  ],
+  "data[].oldEndDateTime": [
+   "null"
+  ],
+  "data[].oldStartDateTime": [
+   "null"
+  ],
+  "data[].primaryResource": [
+   "null",
+   "object"
+  ],
+  "data[].primaryResource.id": [
+   "int"
+  ],
+  "data[].primaryResource.name": [
+   "str"
+  ],
+  "data[].primaryResourceText": [
+   "null"
+  ],
+  "data[].private": [
+   "bool"
+  ],
+  "data[].repeating": [
+   "null"
+  ],
+  "data[].requiresNewAnswer": [
+   "bool"
+  ],
+  "data[].responseDeadline": [
+   "null",
+   "str"
+  ],
+  "data[].responseRequired": [
+   "bool"
+  ],
+  "data[].responseStatus": [
+   "null",
+   "str"
+  ],
+  "data[].startDateTime": [
+   "str"
+  ],
+  "data[].timeSlot": [
+   "null",
+   "object"
+  ],
+  "data[].timeSlot.childRequired": [
+   "bool"
+  ],
+  "data[].timeSlot.timeSlots": [
+   "list"
+  ],
+  "data[].timeSlot.timeSlots[]": [
+   "object"
+  ],
+  "data[].timeSlot.timeSlots[].answers": [
+   "list"
+  ],
+  "data[].timeSlot.timeSlots[].answers[]": [
+   "object"
+  ],
+  "data[].timeSlot.timeSlots[].answers[].concerningProfileId": [
+   "int"
+  ],
+  "data[].timeSlot.timeSlots[].answers[].id": [
+   "int"
+  ],
+  "data[].timeSlot.timeSlots[].answers[].instProfileId": [
+   "int"
+  ],
+  "data[].timeSlot.timeSlots[].answers[].selectedTimeSlotIndex": [
+   "int"
+  ],
+  "data[].timeSlot.timeSlots[].belongsToResource": [
+   "int",
+   "null"
+  ],
+  "data[].timeSlot.timeSlots[].endDate": [
+   "str"
+  ],
+  "data[].timeSlot.timeSlots[].id": [
+   "int"
+  ],
+  "data[].timeSlot.timeSlots[].startDate": [
+   "str"
+  ],
+  "data[].timeSlot.timeSlots[].timeSlotIndexes": [
+   "list"
+  ],
+  "data[].timeSlot.timeSlots[].timeSlotIndexes[]": [
+   "object"
+  ],
+  "data[].timeSlot.timeSlots[].timeSlotIndexes[].endTime": [
+   "str"
+  ],
+  "data[].timeSlot.timeSlots[].timeSlotIndexes[].startTime": [
+   "str"
+  ],
+  "data[].title": [
+   "str"
+  ],
+  "data[].type": [
+   "str"
+  ],
+  "data[].vacationChildrenCountByDates": [
+   "null"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ }
+}
