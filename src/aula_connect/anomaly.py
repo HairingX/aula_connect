@@ -22,6 +22,9 @@ class AnomalyKind(StrEnum):
     "notifications" or "weekly plans"."""
     API_VERSION_CHANGED = "api_version_changed"
     """Aula's API at a version the client was not made for; the detail is that version."""
+    UNKNOWN_SHAPE = "unknown_shape"
+    """An answer in a shape other than the one known; the detail is the request, a place in the
+    answer and its type, such as "GET calendar.getEventById: data.newField (str)"."""
 
 
 @dataclass(frozen=True)

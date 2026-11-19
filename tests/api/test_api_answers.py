@@ -12,6 +12,8 @@ from typing import Any
 
 import aiohttp
 import pytest
+
+from aula_connect import AnomalyKind
 from aiohttp import web
 
 from aula_connect.api.aula_errors import AulaApiError, AulaCredentialError, ParseError
@@ -23,7 +25,7 @@ from aula_connect.testing import Handler, SimulatedAulaApi
 START = datetime(2026, 12, 28, tzinfo=timezone.utc)
 ONE_WEEK = START + timedelta(days=7)
 TWO_WEEKS = START + timedelta(days=14)
-MEEBOOK = "GET /meebook/relatedweekplan/all"
+MEEBOOK = "GET /aulaapi/relatedweekplan/all"
 EASYIQ = "POST /easyiq/weekplaninfo"
 MINUDDANNELSE = "GET /minuddannelse/ugebrev"
 PLAN: dict[str, object] = {"id": 1, "name": "Alma", "unilogin": "alma", "weekPlan": [{"date": "2026-12-29", "tasks": []}]}
@@ -202,7 +204,7 @@ def test_a_profile_context_aula_does_not_give_leaves_the_login_without_widgets(a
     async def act(aula: SimulatedAulaApi, client: AulaProxyClient) -> tuple[list[Any], list[str]]:
         aula.answers["profiles.getProfileContext"] = answer
         data = await client.login()
-        return data.widgets, [anomaly.detail for anomaly in client.anomalies()]
+        return data.widgets, [anomaly.detail for anomaly in client.anomalies() if anomaly.kind is AnomalyKind.UNREADABLE_RESPONSE]
 
     assert _run(act, login=False) == ([], noted)
 
@@ -215,7 +217,7 @@ def test_master_data_aula_does_not_give_leaves_the_children_without_their_main_g
     async def act(aula: SimulatedAulaApi, client: AulaProxyClient) -> tuple[str, list[str]]:
         aula.answers["profiles.getProfileMasterData"] = answer
         await client.login()
-        return _children(client)[0].main_group.name, [anomaly.detail for anomaly in client.anomalies()]
+        return _children(client)[0].main_group.name, [anomaly.detail for anomaly in client.anomalies() if anomaly.kind is AnomalyKind.UNREADABLE_RESPONSE]
 
     assert _run(act, login=False) == ("", noted)
 
@@ -393,7 +395,7 @@ def test_a_widget_answer_that_cannot_be_read_fails_the_read_and_is_noted(name: s
         aula.answers[key] = _json(answer)
         with pytest.raises(ParseError):
             await read(client, _children(client), ONE_WEEK)
-        return [anomaly.detail for anomaly in client.anomalies()]
+        return [anomaly.detail for anomaly in client.anomalies() if anomaly.kind is AnomalyKind.UNREADABLE_RESPONSE]
 
     assert _run(act) == [what]
 

@@ -44,9 +44,7 @@ class Exchange:
     @property
     def endpoint(self) -> str:
         """What was asked for: the Aula API method, or the path of a widget's request."""
-        parts = urlsplit(self.url)
-        method = dict(parse_qsl(parts.query)).get("method")
-        return method or parts.path
+        return endpoint(self.url)
 
     @property
     def failed(self) -> bool:
@@ -106,6 +104,12 @@ class Recorder:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def endpoint(url: str) -> str:
+    """What `url` asks for: the Aula API method, or the path of a widget's request."""
+    parts = urlsplit(url)
+    return dict(parse_qsl(parts.query)).get("method") or parts.path
 
 
 def _url(url: str, params: Mapping[str, str] | None) -> str:

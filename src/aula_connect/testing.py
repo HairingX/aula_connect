@@ -349,6 +349,25 @@ class SimulatedAulaApi:
     """What Aula sends of a message besides what a test gives."""
     _EVENT: dict[str, object] = {"hasAttachments": False, "requiresNewAnswer": False, "responseRequired": False}
     """What Aula sends of a calendar event besides what a test gives."""
+    _LISTED_ONLY = frozenset(
+        {
+            "belongsToProfiles", "belongsToResources", "createdDateTime", "creatorInstProfileId", "creatorName",
+            "creatorProfileId", "directlyRelated", "hasAttachments", "requiresNewAnswer", "responseStatus",
+            "vacationChildrenCountByDates",
+        }
+    )
+    """What Aula sends of a calendar event in the list of events, and not of the event alone."""
+    _DETAIL: dict[str, object] = {
+        "description": {"html": "<p>Mere om det</p>"},
+        "attachments": [],
+        "coOrganizers": [],
+        "invitees": [],
+        "inviteeGroups": [],
+        "isDeadlineExceeded": False,
+        "isDeleted": False,
+        "responseRequired": False,
+    }
+    """What Aula sends of a calendar event alone besides what is listed of it."""
 
     def __init__(
         self, access_token: str = "access", network: Network | None = None, login: SimulatedAulaLogin | None = None
@@ -388,14 +407,14 @@ class SimulatedAulaApi:
         """The Aula API methods and widget paths asked for, in order."""
         self.answers: dict[str, Handler] = {}
         """Answers that replace the API's own: by the Aula API method, such as "presence.getDailyOverview",
-        or by the method and path of a widget's request, such as "GET /meebook/relatedweekplan/all"."""
+        or by the method and path of a widget's request, such as "GET /aulaapi/relatedweekplan/all"."""
         self._server: TestServer | None = None
         self.app = web.Application(middlewares=[self.network.middleware, self._answer])
         self.app.add_routes(
             [
                 web.get("/api/v{version:[0-9]+}", self._api),
                 web.post("/api/v{version:[0-9]+}", self._api),
-                web.get("/meebook/relatedweekplan/all", self._meebook),
+                web.get("/aulaapi/relatedweekplan/all", self._meebook),
                 web.post("/easyiq/weekplaninfo", self._easyiq),
                 web.get("/minuddannelse/ugebrev", self._minuddannelse),
             ]
@@ -422,7 +441,7 @@ class SimulatedAulaApi:
         """Point an API client at the simulated API and widgets instead of the real ones."""
         client.use_api(f"{self.url}/api/v")
         client.api_version = self.VERSION
-        client.meebook_api = f"{self.url}/meebook"
+        client.meebook_api = f"{self.url}/aulaapi"
         client.easyiq_api = f"{self.url}/easyiq"
         client.min_uddannelse_api = f"{self.url}/minuddannelse"
         return client
@@ -457,7 +476,7 @@ class SimulatedAulaApi:
         match method:
             case "profiles.getProfilesByLogin":
                 profile = {
-                    **self.guardian,
+                    **{name: value for name, value in self.guardian.items() if name != "userId"},
                     "children": [self.child],
                     "institutionProfiles": [self.institution],
                 }
@@ -510,7 +529,8 @@ class SimulatedAulaApi:
                 found = [event for event in self.events if str(event.get("id")) == event_id]
                 if not found:
                     return web.json_response({"status": {"code": 40, "message": ""}, "data": None}, status=400)
-                return self._ok({**self._EVENT, **found[0], "description": {"html": "<p>Mere om det</p>"}})
+                listed = {name: value for name, value in found[0].items() if name not in self._LISTED_ONLY}
+                return self._ok({**self._DETAIL, **listed})
             case "calendar.getBirthdayEventsForInstitutions":
                 return self._ok(self.birthdays)
             case "aulaToken.getAulaToken":

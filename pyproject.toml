@@ -40,7 +40,7 @@ Releases = "https://github.com/HairingX/aula_connect/releases"
 where = ["src"]
 
 [tool.setuptools.package-data]
-aula_connect = ["py.typed"]
+aula_connect = ["py.typed", "shapes.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -13,7 +13,8 @@ from datetime import datetime, timedelta, date, timezone
 import json
 import logging
 from ..anomaly import Anomaly, AnomalyKind
-from ..capture import Recorder
+from ..capture import Recorder, endpoint
+from ..shapes import unknown
 from ..http import HttpResponse, HttpSession
 from ..redact import redact
 from .aula_errors import AulaCredentialError, AulaApiError, ParseError
@@ -123,6 +124,8 @@ class _TokenSession(HttpSession):
     _access_token: str = ""
     api_base: str = API
     recorder: Recorder | None = None
+    on_answer: Callable[[str, str, HttpResponse], None] | None = None
+    """Called with each answer, after the verb and the address it was asked at."""
 
     def set_access_token(self, token: str) -> None:
         """Send `token` with every request of the Aula API from now on."""
@@ -147,6 +150,8 @@ class _TokenSession(HttpSession):
             raise
         if self.recorder is not None:
             self.recorder.record(method, url, kwargs.get("params"), kwargs.get("json"), response)
+        if self.on_answer is not None:
+            self.on_answer(method, url, response)
         return response
 
 
@@ -188,6 +193,7 @@ class AulaProxyClient:
         self.recorder = Recorder()
         """The newest answers Aula gave this client."""
         self._anomalies: dict[tuple[AnomalyKind, str], datetime] = {}
+        self._session.on_answer = self._check_shape
         self._session.recorder = self.recorder
         self.meebook_api = MEEBOOK_API
         self.easyiq_api = EASYIQ_API
@@ -200,6 +206,17 @@ class AulaProxyClient:
 
     def _note(self, kind: AnomalyKind, detail: str) -> None:
         self._anomalies[(kind, detail)] = datetime.now(timezone.utc)
+
+    def _check_shape(self, method: str, url: str, response: HttpResponse) -> None:
+        if response.status_code != HTTPStatus.OK:
+            return
+        try:
+            answer = response.json()
+        except ValueError:
+            return
+        request = f"{method} {endpoint(url)}"
+        for place in unknown(request, answer):
+            self._note(AnomalyKind.UNKNOWN_SHAPE, f"{request}: {place}")
 
     def _note_api_version(self) -> None:
         if self.api_version != int(API_VERSION):

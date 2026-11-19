@@ -22,6 +22,7 @@ from aula_connect.api.aula_proxy_client import AulaProxyClient
 from aula_connect.capture import Recorder
 from aula_connect.http import HttpResponse, SentRequest
 from aula_connect.methods import known
+from aula_connect.shapes import KNOWN
 from aula_connect.testing import SimulatedAulaApi, SimulatedAulaLogin
 
 START = datetime(2026, 12, 28, tzinfo=timezone.utc)
@@ -129,7 +130,7 @@ def _account(aula: SimulatedAulaApi) -> None:
             "name": "Alma Østergaard",
             "unilogin": "alma9921",
             "weekPlan": [
-                {"date": "2026-12-29", "tasks": [{"id": 4, "type": "task", "author": "Birgitte Holm", "group": "3A", "pill": "Dansk", "content": "Læs s. 12"}]}
+                {"date": "2026-12-29", "tasks": [{"id": 4, "type": "task", "group": "3A", "pill": "Dansk", "content": "Læs s. 12"}]}
             ],
         }
     ]
@@ -220,6 +221,13 @@ def test_reading_everything_reads_each_kind_once_each_event_but_a_lesson_by_its_
         "aulaToken.getAulaToken",
         "minuddannelse",
     ]
+
+
+def test_the_made_up_answers_have_every_shape_aula_was_seen_to_send_and_no_other() -> None:
+    _, _, client, _ = _read_everything()
+    asked = {f"{exchange.method} {exchange.endpoint}" for exchange in client.api.recorder.exchanges()}
+    assert set(KNOWN) <= asked
+    assert [anomaly.detail for anomaly in client.anomalies() if anomaly.kind is AnomalyKind.UNKNOWN_SHAPE] == []
 
 
 def test_every_method_this_library_asks_is_one_the_catalog_knows_asked_with_its_verb() -> None:
@@ -496,7 +504,9 @@ def test_a_client_names_an_answer_it_could_not_read() -> None:
             await client.login()
         return client.anomalies()
 
-    assert [(anomaly.kind, anomaly.detail) for anomaly in _client_run(act)] == [(AnomalyKind.UNREADABLE_RESPONSE, "profiles")]
+    assert [(anomaly.kind, anomaly.detail) for anomaly in _client_run(act) if anomaly.kind is not AnomalyKind.UNKNOWN_SHAPE] == [
+        (AnomalyKind.UNREADABLE_RESPONSE, "profiles")
+    ]
 
 
 def test_reading_a_method_gives_its_answer_with_who_someone_is_replaced() -> None:
@@ -522,8 +532,8 @@ def test_reading_a_method_can_reveal_the_keys_asked_for_or_all_but_never_a_token
 
     some, every = _client_run(act)
     some_text, every_text = json.dumps(some, ensure_ascii=False), json.dumps(every, ensure_ascii=False)
-    assert "Pernille Østergaard" in some_text and "Alma Østergaard" not in some_text and "pern4821" not in some_text
-    assert "Pernille Østergaard" in every_text and "Alma Østergaard" in every_text and "pern4821" in every_text
+    assert "Pernille Østergaard" in some_text and "Alma Østergaard" not in some_text and "2048193" not in some_text
+    assert "Pernille Østergaard" in every_text and "Alma Østergaard" in every_text and "2048193" in every_text
     assert set(every["headers"]["Set-Cookie"]) == {"x"}
 
 
@@ -636,7 +646,7 @@ def test_an_area_that_is_no_name_is_named_by_what_stands_in_for_it() -> None:
         ]
         login = await client.login()
         await client.get_notifications(AulaProxyClient.flatten_children(login.profiles))
-        return sorted(anomaly.detail for anomaly in client.anomalies())
+        return sorted(anomaly.detail for anomaly in client.anomalies() if anomaly.kind is AnomalyKind.UNKNOWN_NOTIFICATION_AREA)
 
     assert _client_run(act) == ["<missing>", "<unrecognised>"]
 
