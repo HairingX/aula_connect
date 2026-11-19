@@ -309,6 +309,16 @@ def test_the_widgets_are_read_with_their_tokens() -> None:
     assert aula.requests.count("aulaToken.getAulaToken") == 3
 
 
+def test_meebook_is_asked_for_the_iso_week_under_the_guardians_aula_user_id() -> None:
+    async def act(client: AulaProxyClient) -> Any:
+        assert client._login_result is not None
+        children = client._login_result.profiles[0].children
+        return await client.get_weekly_plans(children, datetime(2025, 12, 29, tzinfo=timezone.utc), datetime(2026, 1, 5, tzinfo=timezone.utc))
+
+    _, aula = _read(_nothing, act)
+    assert [(query["currentWeekNumber"], session) for query, session in aula.meebook_requests] == [("2026-W01", "pat")]
+
+
 def test_a_widget_the_institution_does_not_have_is_not_read() -> None:
     def arrange(aula: SimulatedAulaApi) -> None:
         aula.widgets = []

@@ -57,6 +57,8 @@ class SimulatedAulaLogin:
         self.identities = identities or []
         """The identities NemLog-in offers to choose between; none, one is taken at once."""
         self.chosen_identity: str | None = None
+        self.loginoption_query = ""
+        """A query NemLog-in adds to the page it sends to choose an identity on, such as `?lang=da`."""
         self.role_selection = True
         """Whether the broker asks for the role, as it does for a guardian who is also a pupil."""
         self.confirmation_page = True
@@ -205,7 +207,7 @@ class SimulatedAulaLogin:
         ):
             return web.Response(text="MitID login not completed", status=400)
         if len(self.identities) > 1:
-            raise web.HTTPSeeOther(f"{self.url}/nemlogin/loginoption")
+            raise web.HTTPSeeOther(f"{self.url}/nemlogin/loginoption{self.loginoption_query}")
         return self._saml_page()
 
     async def _loginoption_page(self, request: web.Request) -> web.Response:
@@ -407,6 +409,8 @@ class SimulatedAulaApi:
         """Seconds a widget token is valid for when handed out; Aula now and then hands out one expired already."""
         self.requests: list[str] = []
         """The Aula API methods and widget paths asked for, in order."""
+        self.meebook_requests: list[tuple[dict[str, str], str]] = []
+        """Each request to Meebook: its query, and the session it names in the sessionuuid header."""
         self.answers: dict[str, Handler] = {}
         """Answers that replace the API's own: by the Aula API method, such as "presence.getDailyOverview",
         or by the method and path of a widget's request, such as "GET /aulaapi/relatedweekplan/all"."""
@@ -544,6 +548,7 @@ class SimulatedAulaApi:
 
     async def _meebook(self, request: web.Request) -> web.Response:
         self.requests.append("meebook")
+        self.meebook_requests.append((dict(request.query), request.headers.get("sessionuuid", "")))
         if not self._widget_token_valid(request):
             return web.json_response({"message": "JWT-Token expired, please renew."}, status=401)
         return web.json_response(self.weekly_plans)

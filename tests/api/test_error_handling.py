@@ -22,6 +22,7 @@ from aula_connect.api.aula_proxy_client import RECOVERY_COOLDOWN, AulaProxyClien
 from aula_connect.api.models.aula_profile_models import (
     AulaChildProfile,
     AulaLoginData,
+    AulaProfile,
     AulaToken,
     AulaWidget,
 )
@@ -186,6 +187,18 @@ class TestRaiseError(unittest.TestCase):
     def test_404_raises_api_error(self):
         with self.assertRaises(AulaApiError):
             AulaProxyClient._raise_error(_make_response(404))
+
+    def test_an_error_aula_gives_no_message_says_its_status_and_aulas_codes(self):
+        resp = _make_response(404, {"status": {"code": 10, "subCode": 0, "message": "", "errorInformation": []}})
+        with self.assertRaises(AulaApiError) as ctx:
+            AulaProxyClient._raise_error(resp)
+        self.assertEqual(str(ctx.exception), "HTTP 404 Not Found, Aula code 10, sub-code 0")
+
+    def test_an_error_says_aulas_message_after_its_status(self):
+        resp = _make_response(400, {"status": {"code": 40, "message": "Bad parameters"}})
+        with self.assertRaises(AulaApiError) as ctx:
+            AulaProxyClient._raise_error(resp)
+        self.assertEqual(str(ctx.exception), "HTTP 400 Bad Request, Aula code 40: Bad parameters")
 
     def test_ok_response_noop(self):
         AulaProxyClient._raise_error(_make_response(200))
@@ -633,7 +646,7 @@ class TestGetAulaTokenRetry(unittest.TestCase):
 def _meebook_login() -> AulaLoginData:
     return AulaLoginData(
         api_version=19,
-        profiles=[],
+        profiles=[AulaProfile([], "Pat", [], "Pat Example", 201, "pat")],
         widgets=[AulaWidget(id=1, name="Meebook", widget_id=AulaWidgetId.WEEKPLAN_PARENTS)],
     )
 

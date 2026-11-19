@@ -39,6 +39,15 @@ class TestNewsletter(unittest.TestCase):
         self.assertEqual(newsletter.institution_name, "Solskolen")
         self.assertIn("<h1>Week Newsletter</h1>", newsletter.content_html)
 
+    def test_a_newsletter_keeps_its_id_on_every_day_of_a_week_across_new_year(self):
+        data: dict[str, Any] = {
+            "personer": [{"navn": "Alma", "institutioner": [{"institution": "Solskolen", "ugebreve": [{"indhold": "<p>News</p>"}]}]}]
+        }
+        response = cast(AulaGetWeeklyNewsletterResponse, data)
+        monday = AulaNewsletterParser.parse_response(response, date(2025, 12, 29))
+        thursday = AulaNewsletterParser.parse_response(response, date(2026, 1, 1))
+        self.assertEqual(monday[0].newsletters[0].id, thursday[0].newsletters[0].id)
+
     def test_parse_empty_ugebreve(self):
         data: dict[str, Any] = {
             "from_date": "2026-03-16",

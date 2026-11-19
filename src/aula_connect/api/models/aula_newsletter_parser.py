@@ -27,7 +27,7 @@ class AulaNewsletterParser(AulaParser):
         if not institutions:
             return None
 
-        weekno = from_date.strftime("%Y-W%V")
+        weekno = from_date.strftime("%G-W%V")
         newsletters: List[AulaNewsletter] = []
 
         for institution in institutions:
