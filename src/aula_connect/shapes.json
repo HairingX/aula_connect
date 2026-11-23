@@ -2132,6 +2132,12 @@
   "data[].folderId": [
    "null"
   ],
+  "data[].groupId": [
+   "null"
+  ],
+  "data[].groupName": [
+   "null"
+  ],
   "data[].institutionCode": [
    "null",
    "str"
@@ -2164,6 +2170,12 @@
    "str"
   ],
   "data[].notificationType": [
+   "str"
+  ],
+  "data[].postId": [
+   "int"
+  ],
+  "data[].postTitle": [
    "str"
   ],
   "data[].relatedChildInstitutionProfileId": [

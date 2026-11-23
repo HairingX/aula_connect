@@ -68,3 +68,8 @@ def test_the_known_shapes_name_fields_and_types_and_never_a_value(request_: str)
     for at, types in KNOWN[request_].items():
         assert at == "." or all(part.isidentifier() for part in at.replace("[]", ".").split(".") if part), at
         assert set(types) <= {"object", "list", "str", "int", "float", "bool", "null"}, (at, types)
+
+
+def test_a_notification_of_a_post_is_a_known_shape() -> None:
+    post = {"postId": 1, "postTitle": "Juleklip", "groupId": None, "groupName": None}
+    assert unknown("GET notifications.getNotificationsForActiveProfile", {"data": [post]}) == []
