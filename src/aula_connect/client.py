@@ -46,7 +46,7 @@ from .pseudonym import pseudonymised, shapes
 from .login import AulaLoginClient
 from .redact import redact
 from .login.exceptions import NetworkError, TokenExpiredError
-from .tabulex_probe import TABULEX_DOMAINS, TABULEX_PORTAL, TabulexProbeReport, follow
+from .tabulex_probe import TABULEX_DOMAINS, TABULEX_PORTAL, TabulexProbeReport, follow, probe_session
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -482,7 +482,7 @@ class AulaClient:
 
         Args:
             session: The session the chain is followed on, with cookies of its own, not
-                Aula's; a new one where None.
+                Aula's, sent back as they were set; a new one where None.
             reads: Addresses on `domains`, or paths on the portal's site, read once logged in.
 
         Raises:
@@ -492,7 +492,7 @@ class AulaClient:
         await self._ensure_valid_token()
         widget_id, url, fields = await self._proxy.tabulex_login_form()
         if session is None:
-            async with aiohttp.ClientSession() as own:
+            async with probe_session() as own:
                 report = await follow(own, widget_id, url, fields, domains, portal, reads)
         else:
             report = await follow(session, widget_id, url, fields, domains, portal, reads)

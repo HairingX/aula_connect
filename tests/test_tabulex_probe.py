@@ -44,13 +44,18 @@ def _nothing(aula: SimulatedAulaApi, tabulex: SimulatedTabulex) -> None:
     return None
 
 
-def _probe(arrange: Arrange = _nothing, own_session: bool = False, reads: Sequence[str] | Callable[[SimulatedTabulex], Sequence[str]] = ()) -> tuple[Any, SimulatedAulaApi, SimulatedTabulex, AulaClient]:
+def _probe(
+    arrange: Arrange = _nothing,
+    own_session: bool = False,
+    reads: Sequence[str] | Callable[[SimulatedTabulex], Sequence[str]] = (),
+    quoting: bool = False,
+) -> tuple[Any, SimulatedAulaApi, SimulatedTabulex, AulaClient]:
     async def run() -> tuple[Any, SimulatedAulaApi, SimulatedTabulex, AulaClient]:
         async with (
             SimulatedAulaApi() as aula,
             SimulatedTabulex(aula) as tabulex,
             aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True)) as session,
-            tabulex.session() as chain,
+            aiohttp.ClientSession(connector=tabulex.connector()) if quoting else tabulex.session() as chain,
         ):
             aula.guardian["userId"] = "guardian-4821"
             aula.child["userId"] = "child-7713"
@@ -135,6 +140,15 @@ def test_the_probe_follows_the_whole_login_as_a_browser_does_and_reads_the_porta
     )
     assert report.reads == ()
     assert not [request for request in tabulex.requests if "elsewhere" in request]
+
+
+def test_the_portals_base64_session_is_sent_back_as_it_was_set() -> None:
+    report, _, _, _ = _probe()
+    assert report.hops[-1].status == 200
+    quoted, _, _, _ = _probe(quoting=True)
+    broken = quoted.hops[-1]
+    assert (broken.address.host, broken.status) == (PORTAL, 500)
+    assert broken.page is not None and broken.page.title is not None and "Base-64" in broken.page.title
 
 
 def test_the_reads_asked_are_read_with_get_once_logged_in_json_by_its_shape_and_pseudonymised() -> None:

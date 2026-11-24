@@ -31,6 +31,7 @@ from mitid_connect.testing import Network, SimulatedMitID, User
 
 from .api.aula_proxy_client import AulaProxyClient
 from .login import AulaLoginClient
+from .tabulex_probe import probe_session
 
 APP_REDIRECT_URI = "https://app-private.aula.dk"
 """Where Aula sends the app back to, with the code; it is never requested."""
@@ -868,7 +869,8 @@ class SimulatedTabulex:
         self.sp_session = secrets.token_hex(8)
         self.login_token = secrets.token_hex(8)
         self.signed_in = secrets.token_hex(8)
-        self.portal_session = secrets.token_hex(8)
+        self.portal_session = base64.b64encode(secrets.token_bytes(39) + b"\xfb\xff").decode()
+        """The portal's session, in base64 as a real portal's, with a "/" and padding."""
         self.forms: list[dict[str, str]] = []
         """Each form posted to the widget's address."""
         self.requests: list[str] = []
@@ -909,8 +911,11 @@ class SimulatedTabulex:
 
     def session(self) -> aiohttp.ClientSession:
         """A session that reaches the simulated hosts on this machine, and no other host."""
-        hosts = {self.SP, self.IDP, self.PORTAL, self.ELSEWHERE}
-        return aiohttp.ClientSession(connector=aiohttp.TCPConnector(resolver=_LocalResolver(hosts)))
+        return probe_session(self.connector())
+
+    def connector(self) -> aiohttp.TCPConnector:
+        """A connector that reaches the simulated hosts on this machine, and no other host."""
+        return aiohttp.TCPConnector(resolver=_LocalResolver({self.SP, self.IDP, self.PORTAL, self.ELSEWHERE}))
 
     async def _handle(self, request: web.Request) -> web.StreamResponse:
         host = request.host.split(":")[0]
@@ -1006,7 +1011,14 @@ class SimulatedTabulex:
         return web.Response(text="<h2>Der skete en fejl</h2><p>Sporings-ID: 8b506243b6</p>", content_type="text/html", status=500)
 
     async def _portal(self, request: web.Request) -> web.StreamResponse:
-        signed_in = request.cookies.get("FedAuth") == self.portal_session
+        sent: dict[str, str] = {}
+        for part in request.headers.get("Cookie", "").split(";"):
+            name, _, value = part.strip().partition("=")
+            sent[name] = value
+        if "FedAuth" in sent and sent["FedAuth"] != self.portal_session:
+            error = "The input is not a valid Base-64 string as it contains a non-base 64 character."
+            return web.Response(text=f"<title>{error}</title><h1>Server Error in '/' Application.</h1>", content_type="text/html", status=500)
+        signed_in = sent.get("FedAuth") == self.portal_session
         if request.method == "POST" and request.path == "/":
             form = await request.post()
             if form.get("wa") != "wsignin1.0" or form.get("wresult") != self.assertion:

@@ -191,6 +191,15 @@ class TabulexProbeReport:
         return dataclasses.asdict(self)
 
 
+def probe_session(connector: aiohttp.BaseConnector | None = None) -> aiohttp.ClientSession:
+    """A session for the probe, with cookies of its own, sent back as they were set.
+
+    Tabulex's portal sets its session in base64 cookies, which aiohttp's default jar would send
+    back quoted, and the portal fails to read.
+    """
+    return aiohttp.ClientSession(connector=connector, cookie_jar=aiohttp.CookieJar(quote_cookie=False))
+
+
 def allowed(host: str, domains: tuple[str, ...]) -> bool:
     """Whether `host` is one of `domains` or under one."""
     host = host.lower().rstrip(".")
