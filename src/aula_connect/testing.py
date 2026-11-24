@@ -820,37 +820,59 @@ class _LocalResolver(AbstractResolver):
 class SimulatedTabulex:
     """IST's login from Aula into Tabulex's parent portal, on a local test server under made-up host names.
 
-    The widget's address takes the form Aula's portal posts, checks its Aula token, and redirects
-    to the identity provider, which sets its session cookie and answers with a form it submits by
-    itself to the parent portal. The portal takes it, sets its own cookie, and redirects to its
-    page, which loads scripts of its own site and of another. Use it as an async context
-    manager, reached through `session()`.
+    It follows what a real chain was measured to do up to Aula's identity provider's login page,
+    and SimpleSAMLphp and WS-Federation beyond it. The widget's address, on IST's service
+    provider, takes the form Aula's portal posts, checks its Aula token, sets the shared session
+    cookie and redirects to Aula's identity provider, which redirects to its login page. That
+    page sets the login's cookie and answers with SimpleSAMLphp's form to the service provider,
+    which its script `post.js` clicks. The service provider takes the assertion and sends the
+    browser on to the portal, which redirects to its WS-Federation sign-in; signed in, it answers
+    with a form an inline script submits to the portal, which sets its own cookie and redirects
+    to its page, loading scripts of its own site and of another. Without the login, the sign-in
+    redirects to the choice of identity provider, a page a browser stays on. Use it as an async
+    context manager, reached through `session()`.
     """
 
-    IDP = "saml.borger.tabulex.test"
+    SP = "saml.borger.tabulex.test"
+    IDP = "borger-aula-login.tabulex.test"
     PORTAL = "foraeldre.tabulex.test"
     ELSEWHERE = "login.elsewhere.test"
     DOMAINS = ("tabulex.test",)
     """The domains a probe of the simulated chain follows."""
     SCRIPT = 'angular.module("fravaer").service("api", function ($http) { return $http.get("/api/fravaer"); });'
     """The text of the portal's own script."""
+    CHUNK = 'define("fravaer", function () { return "/api/fravaer/syg"; });'
+    """The text of a script the portal loads on demand."""
+    AULA_PHP = "/simplesaml/module.php/tabulexaulalogin/aula.php"
+    SSO = "/simplesaml/saml2/idp/SSOService.php"
+    LOGIN = "/simplesaml/module.php/tabulexaulalogin/login.php"
+    ACS = "/simplesaml/module.php/saml/sp/saml2-acs.php/aula"
+    PRP = "/simplesaml/module.php/adfs/idp/prp.php"
+    DISCO = "/simplesaml/module.php/saml/disco.php"
 
     def __init__(self, aula: SimulatedAulaApi) -> None:
         """A chain that takes the widget tokens `aula` hands out."""
         self.aula = aula
         self.leave_to_elsewhere = False
-        """Whether the identity provider sends the browser to a host outside Tabulex's."""
+        """Whether Aula's identity provider sends the browser to a host outside Tabulex's."""
         self.needs_javascript = False
-        """Whether the identity provider answers with a page that needs JavaScript, in place of its form."""
+        """Whether the login page answers with a page that needs JavaScript, in place of its form."""
         self.loops = False
-        """Whether the identity provider redirects to itself for ever."""
+        """Whether Aula's identity provider redirects to itself for ever."""
+        self.onward = "redirect"
+        """How the service provider sends the browser on to the portal: "redirect", "refresh" or "script"."""
+        self.moved_acs = False
+        """Whether the service provider's assertion consumer answers a temporary redirect to where it moved."""
         self.assertion = secrets.token_hex(16)
-        self.idp_session = secrets.token_hex(8)
+        self.state = secrets.token_hex(12)
+        self.sp_session = secrets.token_hex(8)
+        self.login_token = secrets.token_hex(8)
+        self.signed_in = secrets.token_hex(8)
         self.portal_session = secrets.token_hex(8)
         self.forms: list[dict[str, str]] = []
         """Each form posted to the widget's address."""
         self.requests: list[str] = []
-        """The host and path of each request, in order."""
+        """The method, host and path of each request, in order."""
         self._server: TestServer | None = None
         self.app = web.Application()
         self.app.add_routes([web.route("*", "/{path:.*}", self._handle)])
@@ -873,7 +895,7 @@ class SimulatedTabulex:
     @property
     def widget_url(self) -> str:
         """The address of Aula's Tabulex widget."""
-        return f"{self._base(self.IDP)}/simplesaml/module.php/tabulexaulalogin/aula.php?appid=made-up-app"
+        return f"{self._base(self.SP)}{self.AULA_PHP}?appid=made-up-app"
 
     @property
     def widget(self) -> dict[str, object]:
@@ -887,20 +909,39 @@ class SimulatedTabulex:
 
     def session(self) -> aiohttp.ClientSession:
         """A session that reaches the simulated hosts on this machine, and no other host."""
-        return aiohttp.ClientSession(connector=aiohttp.TCPConnector(resolver=_LocalResolver({self.IDP, self.PORTAL, self.ELSEWHERE})))
+        hosts = {self.SP, self.IDP, self.PORTAL, self.ELSEWHERE}
+        return aiohttp.ClientSession(connector=aiohttp.TCPConnector(resolver=_LocalResolver(hosts)))
 
     async def _handle(self, request: web.Request) -> web.StreamResponse:
         host = request.host.split(":")[0]
-        self.requests.append(f"{host}{request.path}")
+        self.requests.append(f"{request.method} {host}{request.path}")
+        if host == self.SP:
+            return await self._sp(request)
         if host == self.IDP:
-            return await self._idp(request)
+            return self._idp(request)
         if host == self.PORTAL:
             return await self._portal(request)
         return web.Response(text="<p>Somewhere else</p>", content_type="text/html")
 
-    async def _idp(self, request: web.Request) -> web.StreamResponse:
-        prp = "/simplesaml/module.php/adfs/idp/prp.php"
-        if request.method == "POST" and request.path.endswith("/tabulexaulalogin/aula.php"):
+    @staticmethod
+    def _post_page(action: str, fields: dict[str, str], simplesamlphp: bool) -> web.Response:
+        inputs = "".join(f'<input type="hidden" name="{name}" value="{value}"/>' for name, value in fields.items())
+        if simplesamlphp:
+            text = (
+                '<html><head><title>POST data</title><script src="/simplesaml/resources/post.js"></script></head><body>'
+                "<noscript><p>Since your browser does not support JavaScript, press the button.</p></noscript>"
+                f'<form method="post" action="{action}"><input type="submit" id="postLoginSubmitButton"/>{inputs}</form></body></html>'
+            )
+        else:
+            text = (
+                f'<html><head><title>Working...</title></head><body><form method="POST" action="{action}">{inputs}'
+                '<noscript><input type="submit" value="Submit"/></noscript></form>'
+                "<script>window.setTimeout('document.forms[0].submit()', 0);</script></body></html>"
+            )
+        return web.Response(text=text, content_type="text/html")
+
+    async def _sp(self, request: web.Request) -> web.StreamResponse:
+        if request.method == "POST" and request.path == self.AULA_PHP:
             form = {name: str(value) for name, value in (await request.post()).items()}
             names = {"sessionUUID", "isMobileApp", "aulaToken", "assuranceLevel", "userProfile", "childFilter", "institutionFilter", "group", "currentWeekNumber"}
             if (
@@ -912,24 +953,57 @@ class SimulatedTabulex:
             ):
                 return web.Response(text="<p>Der skete en fejl</p>", content_type="text/html", status=400)
             self.forms.append(form)
-            response = web.Response(status=302, headers={"Location": f"{prp}?wa=wsignin1.0&wtrealm={self.portal}&wctx=rm%3d0"})
-            response.set_cookie("SimpleSAMLCitizenSessionID", self.idp_session, domain="tabulex.test", path="/")
+            response = web.Response(status=302, headers={"Location": f"{self._base(self.IDP)}{self.SSO}?spentityid={self.SP}&RelayState={self.portal}"})
+            response.set_cookie("SimpleSAMLCitizenSessionID", self.sp_session, domain="tabulex.test", path="/")
             return response
-        if request.path == prp and request.cookies.get("SimpleSAMLCitizenSessionID") == self.idp_session:
-            if self.loops:
-                return web.Response(status=302, headers={"Location": f"{prp}?again=1"})
-            if self.leave_to_elsewhere:
-                return web.Response(status=302, headers={"Location": f"{self._base(self.ELSEWHERE)}/login?SAMLRequest={self.assertion}"})
-            if self.needs_javascript:
-                return web.Response(text='<div id="login"></div><script src="/login.js"></script>', content_type="text/html")
-            fields = {"wa": "wsignin1.0", "wresult": self.assertion, "wctx": "rm=0"}
-            inputs = "".join(f'<input type="hidden" name="{name}" value="{value}"/>' for name, value in fields.items())
+        if request.method == "POST" and request.path == self.ACS and self.moved_acs:
+            return web.Response(status=307, headers={"Location": f"{self.ACS}2"})
+        if request.method == "POST" and request.path in (self.ACS, f"{self.ACS}2"):
+            form = await request.post()
+            if form.get("SAMLResponse") != self.assertion or request.cookies.get("SimpleSAMLCitizenSessionID") != self.sp_session:
+                return web.Response(text="<p>Der skete en fejl</p>", content_type="text/html", status=403)
+            relay = str(form.get("RelayState"))
+            if self.onward == "refresh":
+                response: web.Response = web.Response(text=f'<meta http-equiv="refresh" content="0; url={relay}">', content_type="text/html")
+            elif self.onward == "script":
+                response = web.Response(text=f'<title>Vent</title><script>location.replace("{relay}");</script>', content_type="text/html")
+            else:
+                response = web.Response(status=303, headers={"Location": relay})
+            response.set_cookie("SimpleSAMLCitizenAuthToken", self.signed_in, domain="tabulex.test", path="/")
+            return response
+        if request.path == self.PRP:
+            if request.cookies.get("SimpleSAMLCitizenAuthToken") != self.signed_in:
+                return web.Response(status=302, headers={"Location": f"{self.DISCO}?entityID={self.SP}&return=/discoresp.php"})
+            return self._post_page(self.portal, {"wa": "wsignin1.0", "wresult": self.assertion, "wctx": "rm=0"}, simplesamlphp=False)
+        if request.path == self.DISCO:
             return web.Response(
-                text=f'<html><body onload="document.forms[0].submit()"><form method="post" action="{self.portal}">{inputs}'
-                '<noscript><button type="submit">Fortsæt</button></noscript></form></body></html>',
+                text='<title>Vælg institution (identitetsudbyder)</title><form id="identform" method="get" action="/simplesaml/module.php/saml/disco.php">'
+                '<input type="hidden" name="return" value="/discoresp.php"/><input type="hidden" id="idpentityid" name="idpentityid" value=""/></form>'
+                '<script src="/jquery.js"></script><button onclick="$(\'#identform\').submit();">Vælg log-in</button>'
+                "<script>function choose() { $('#identform').submit(); }</script>",
                 content_type="text/html",
             )
         return web.Response(text="<p>Der skete en fejl</p>", content_type="text/html", status=403)
+
+    def _idp(self, request: web.Request) -> web.StreamResponse:
+        signed = request.cookies.get("SimpleSAMLCitizenSessionID") == self.sp_session
+        if request.path == "/simplesaml/resources/post.js":
+            return web.Response(text="window.onload = function () { document.getElementById('postLoginSubmitButton').click(); };", content_type="application/javascript")
+        if request.path == self.SSO and signed:
+            if self.loops:
+                return web.Response(status=302, headers={"Location": f"{self.SSO}?again=1"})
+            if self.leave_to_elsewhere:
+                return web.Response(status=302, headers={"Location": f"{self._base(self.ELSEWHERE)}/login?SAMLRequest={self.assertion}"})
+            return web.Response(status=302, headers={"Location": f"{self.LOGIN}?AuthState={self.state}"})
+        if request.path == self.LOGIN and signed and request.query.get("AuthState") == self.state:
+            if self.needs_javascript:
+                response = web.Response(text='<div id="login"></div><script src="/login.js"></script>', content_type="text/html")
+            else:
+                fields = {"SAMLResponse": self.assertion, "RelayState": self.portal}
+                response = self._post_page(f"{self._base(self.SP)}{self.ACS}", fields, simplesamlphp=True)
+            response.set_cookie("SimpleSAMLCitizenAuthToken", self.login_token, domain="tabulex.test", path="/")
+            return response
+        return web.Response(text="<h2>Der skete en fejl</h2><p>Sporings-ID: 8b506243b6</p>", content_type="text/html", status=500)
 
     async def _portal(self, request: web.Request) -> web.StreamResponse:
         signed_in = request.cookies.get("FedAuth") == self.portal_session
@@ -941,7 +1015,7 @@ class SimulatedTabulex:
             response.set_cookie("FedAuth", self.portal_session, path="/", httponly=True)
             return response
         if not signed_in:
-            return web.Response(status=302, headers={"Location": f"{self._base(self.IDP)}/simplesaml/module.php/adfs/idp/prp.php?wa=wsignin1.0"})
+            return web.Response(status=302, headers={"Location": f"{self._base(self.SP)}{self.PRP}?wa=wsignin1.0&wtrealm={self.portal}"})
         if request.path == "/":
             port = self._base(self.PORTAL).rsplit(":", 1)[1]
             scripts = (
@@ -949,7 +1023,18 @@ class SimulatedTabulex:
                 f'<script src="http://{self.PORTAL}:1/closed.js"></script><script src="https://cdn.elsewhere.test/lib.js"></script>'
                 f'<script src="http://{self.PORTAL}:{port}/scripts/app.js?v={self.portal_session}"></script><script>var signedIn = true;</script>'
             )
-            return web.Response(text=f"<html><head>{scripts}</head><body><p>Fravær for Alma</p></body></html>", content_type="text/html")
+            return web.Response(text=f"<html><head><title>Tabulex</title>{scripts}</head><body><p>Fravær for Alma</p></body></html>", content_type="text/html")
         if request.path == "/scripts/app.js":
             return web.Response(text=self.SCRIPT, content_type="application/javascript")
+        if request.path == "/scripts/chunk.js":
+            return web.Response(text=self.CHUNK, content_type="text/javascript")
+        if request.path == "/api/children":
+            body = [{"id": 7713, "name": "Alma Hansen", "absenceType": "Sygdom", "present": False, "note": None}]
+            return web.json_response(body)
+        if request.path == "/api/broken":
+            return web.Response(text="{not json", content_type="application/json")
+        if request.path == "/api/text":
+            return web.Response(text="Alma er syg", content_type="text/plain")
+        if request.path == "/api/page":
+            return web.Response(text="<title>Fravær</title><h1>Fravær 2026</h1>", content_type="text/html")
         return web.Response(status=404)

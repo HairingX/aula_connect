@@ -190,14 +190,18 @@ def test_the_simulated_api_answers_a_write_sent_as_aulas_portal_sends_it() -> No
 
 
 TABULEX_ANSWERS: list[tuple[str, str, int]] = [
-    ("GET", f"http://{SimulatedTabulex.IDP}{{port}}/simplesaml/module.php/adfs/idp/prp.php", 403),
+    ("GET", f"http://{SimulatedTabulex.IDP}{{port}}{SimulatedTabulex.SSO}", 500),
+    ("GET", f"http://{SimulatedTabulex.IDP}{{port}}{SimulatedTabulex.LOGIN}", 500),
+    ("POST", f"http://{SimulatedTabulex.SP}{{port}}{SimulatedTabulex.ACS}", 403),
+    ("GET", f"http://{SimulatedTabulex.SP}{{port}}/elsewhere", 403),
+    ("GET", f"http://{SimulatedTabulex.IDP}{{port}}/simplesaml/resources/post.js", 200),
     ("POST", f"http://{SimulatedTabulex.PORTAL}{{port}}/", 400),
     ("GET", f"http://{SimulatedTabulex.ELSEWHERE}{{port}}/login", 200),
 ]
 
 
 @pytest.mark.parametrize(("method", "url", "status"), TABULEX_ANSWERS)
-def test_the_simulated_tabulex_refuses_a_step_without_its_session_and_answers_elsewhere(method: str, url: str, status: int) -> None:
+def test_the_simulated_tabulex_refuses_a_step_without_its_session_and_serves_what_needs_none(method: str, url: str, status: int) -> None:
     async def send() -> int:
         async with SimulatedAulaApi() as aula, SimulatedTabulex(aula) as tabulex, tabulex.session() as session:
             port = tabulex.portal.rsplit(":", 1)[1].rstrip("/")

@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import aiohttp
@@ -19,6 +19,7 @@ from aula_connect.api.aula_errors import NoTabulexWidgetError
 from aula_connect.api.models.aula_parser import now
 from aula_connect.tabulex_probe import (
     MAX_HOPS,
+    VERSION,
     ProbeAddress,
     ProbeCookie,
     ProbeForm,
@@ -29,12 +30,12 @@ from aula_connect.tabulex_probe import (
     allowed,
     follow,
     masked,
+    masked_script,
 )
 from aula_connect.testing import SimulatedAulaApi, SimulatedTabulex
 
-IDP, PORTAL, ELSEWHERE = SimulatedTabulex.IDP, SimulatedTabulex.PORTAL, SimulatedTabulex.ELSEWHERE
-PRP = "/simplesaml/module.php/adfs/idp/prp.php"
-AULA_PHP = "/simplesaml/module.php/tabulexaulalogin/aula.php"
+T = SimulatedTabulex
+SP, IDP, PORTAL, ELSEWHERE = T.SP, T.IDP, T.PORTAL, T.ELSEWHERE
 
 Arrange = Callable[[SimulatedAulaApi, SimulatedTabulex], None]
 
@@ -43,7 +44,7 @@ def _nothing(aula: SimulatedAulaApi, tabulex: SimulatedTabulex) -> None:
     return None
 
 
-def _probe(arrange: Arrange = _nothing, own_session: bool = False) -> tuple[Any, SimulatedAulaApi, SimulatedTabulex, AulaClient]:
+def _probe(arrange: Arrange = _nothing, own_session: bool = False, reads: Sequence[str] | Callable[[SimulatedTabulex], Sequence[str]] = ()) -> tuple[Any, SimulatedAulaApi, SimulatedTabulex, AulaClient]:
     async def run() -> tuple[Any, SimulatedAulaApi, SimulatedTabulex, AulaClient]:
         async with (
             SimulatedAulaApi() as aula,
@@ -70,7 +71,8 @@ def _probe(arrange: Arrange = _nothing, own_session: bool = False) -> tuple[Any,
                 if own_session:
                     result: Any = await client.probe_tabulex(None, ("nowhere.test",), "http://outside.test/")
                 else:
-                    result = await client.probe_tabulex(chain, SimulatedTabulex.DOMAINS, tabulex.portal)
+                    asked = reads(tabulex) if callable(reads) else reads
+                    result = await client.probe_tabulex(chain, SimulatedTabulex.DOMAINS, tabulex.portal, asked)
             except NoTabulexWidgetError as error:
                 result = error
             return result, aula, tabulex, client
@@ -78,9 +80,9 @@ def _probe(arrange: Arrange = _nothing, own_session: bool = False) -> tuple[Any,
     return asyncio.run(run())
 
 
-def test_the_probe_follows_the_chain_posts_the_portals_form_and_reads_the_portal_and_its_own_scripts() -> None:
+def test_the_probe_follows_the_whole_login_as_a_browser_does_and_reads_the_portals_scripts() -> None:
     report, aula, tabulex, client = _probe()
-    assert isinstance(report, TabulexProbeReport) and client.tabulex_probe is report
+    assert isinstance(report, TabulexProbeReport) and client.tabulex_probe is report and report.version == VERSION
     week = now().isocalendar()
     [form] = tabulex.forms
     assert form["aulaToken"] in aula.widget_tokens
@@ -95,26 +97,103 @@ def test_the_probe_follows_the_chain_posts_the_portals_form_and_reads_the_portal
         "currentWeekNumber": f"{week.year}-W{week.week}",
     }
     assert report.widget_id == "0047"
-    [login, idp, post, page] = report.hops
-    assert (login.method, login.address, login.status) == ("POST", ProbeAddress(IDP, AULA_PHP, ("appid",)), 302)
-    assert login.location == ProbeAddress(IDP, PRP, ("wa", "wtrealm", "wctx"))
-    assert login.cookies == (ProbeCookie("SimpleSAMLCitizenSessionID", "tabulex.test"),)
-    assert (idp.method, idp.status, idp.form_action, idp.form_fields) == ("GET", 200, ProbeAddress(PORTAL, "/", ()), ("wa", "wresult", "wctx"))
-    assert not idp.needs_javascript
-    assert (post.method, post.status, post.location, post.cookies) == ("POST", 302, ProbeAddress(PORTAL, "/", ()), (ProbeCookie("FedAuth", PORTAL),))
-    assert (page.method, page.status, page.needs_javascript) == ("GET", 200, True)
-    assert (report.ended, report.stopped_at) == ("a page that needs JavaScript", None)
+    assert [(hop.method, hop.address.host, hop.address.path, hop.status, hop.next) for hop in report.hops] == [
+        ("POST", SP, T.AULA_PHP, 302, "redirect"),
+        ("GET", IDP, T.SSO, 302, "redirect"),
+        ("GET", IDP, T.LOGIN, 200, "form"),
+        ("POST", SP, T.ACS, 303, "redirect"),
+        ("GET", PORTAL, "/", 302, "redirect"),
+        ("GET", SP, T.PRP, 200, "form"),
+        ("POST", PORTAL, "/", 302, "redirect"),
+        ("GET", PORTAL, "/", 200, None),
+    ]
+    aula_php, sso, login, acs, _, prp, signin, page = report.hops
+    assert aula_php.location == ProbeAddress(IDP, T.SSO, ("spentityid", "RelayState"))
+    assert aula_php.cookies == (ProbeCookie("SimpleSAMLCitizenSessionID", "tabulex.test"),)
+    assert sso.location == ProbeAddress(IDP, T.LOGIN, ("AuthState",)) and sso.address.query_names == ("spentityid", "RelayState")
+    assert (login.form_action, login.form_fields, login.content_type) == (ProbeAddress(SP, T.ACS, ()), ("SAMLResponse", "RelayState"), "text/html")
+    assert login.cookies == (ProbeCookie("SimpleSAMLCitizenAuthToken", "tabulex.test"),)
+    assert login.page is not None and (login.page.title, login.page.scripts) == ("POST data", (ProbeAddress(IDP, "/simplesaml/resources/post.js", ()),))
+    assert acs.location == ProbeAddress(PORTAL, "/", ())
+    assert (prp.form_action, prp.form_fields) == (ProbeAddress(PORTAL, "/", ()), ("wa", "wresult", "wctx"))
+    assert signin.cookies == (ProbeCookie("FedAuth", PORTAL),)
+    assert page.page is not None and (page.page.title, page.page.inline) == ("Tabulex", ("var signedIn = true;",))
+    assert (report.ended, report.stopped_at) == ("a page a browser stays on", None)
     [portal] = report.portal_hops
-    assert (portal.method, portal.address, portal.status, portal.needs_javascript) == ("GET", ProbeAddress(PORTAL, "/", ()), 200, True)
-    assert portal.page is not None and portal.page.inline == ("var signedIn = true;",)
-    assert report.portal_ended == "a page that needs JavaScript"
+    assert (portal.method, portal.address, portal.status) == ("GET", ProbeAddress(PORTAL, "/", ()), 200)
+    assert (report.portal_ended, report.portal_stopped_at) == ("a page a browser stays on", None)
     assert [(script.address.host, script.address.path, script.address.query_names, script.status, script.text) for script in report.scripts] == [
         (PORTAL, "/scripts/app.js", ("v",), 200, SimulatedTabulex.SCRIPT),
         (PORTAL, "/scripts/gone.js", (), 404, None),
         (PORTAL, "/closed.js", (), 0, None),
         ("cdn.elsewhere.test", "/lib.js", (), 0, None),
     ]
+    assert report.cookies == (
+        ProbeCookie("FedAuth", PORTAL),
+        ProbeCookie("SimpleSAMLCitizenAuthToken", "tabulex.test"),
+        ProbeCookie("SimpleSAMLCitizenSessionID", "tabulex.test"),
+    )
+    assert report.reads == ()
     assert not [request for request in tabulex.requests if "elsewhere" in request]
+
+
+def test_the_reads_asked_are_read_with_get_once_logged_in_json_by_its_shape_and_pseudonymised() -> None:
+    def reads(tabulex: SimulatedTabulex) -> list[str]:
+        port = tabulex.portal.rsplit(":", 1)[1].rstrip("/")
+        own = ["/api/children", "/api/broken", "/api/text", "/api/page", "/scripts/chunk.js", "/missing"]
+        return [*own, "https://outside.example/x", f"ftp://{PORTAL}/x", f"http://{PORTAL}:1/x", f"http://{IDP}:{port}{T.SSO}"]
+
+    report, _, tabulex, _ = _probe(reads=reads)
+    children, broken, text, page, chunk, missing, outside, ftp, closed, sso = report.reads
+    assert (children.asked, children.address, children.status, children.content_type) == ("/api/children", ProbeAddress(PORTAL, "/api/children", ()), 200, "application/json")
+    assert children.shape == {
+        ".": ["list"],
+        "[]": ["object"],
+        "[].absenceType": ["str"],
+        "[].id": ["int"],
+        "[].name": ["str"],
+        "[].note": ["null"],
+        "[].present": ["bool"],
+    }
+    [child] = children.answer
+    assert (child["absenceType"], child["present"], child["note"]) == ("Sygdom", False, None)
+    assert child["id"] != 7713 and "Alma" not in child["name"] and len(child["name"]) == len("Alma Hansen")
+    assert (broken.status, broken.shape, broken.answer, broken.length) == (200, None, None, len("{not json"))
+    assert (text.content_type, text.text, text.length) == ("text/plain", None, len("Alma er syg"))
+    assert page.page is not None and (page.page.title, page.page.headings) == ("Fravær", ("Fravær «4»",))
+    assert (chunk.content_type, chunk.text) == ("text/javascript", SimulatedTabulex.CHUNK)
+    assert (missing.status, missing.shape, missing.page, missing.text) == (404, None, None, None)
+    assert (outside.address, outside.status, outside.error) == (None, 0, "outside the domains followed")
+    assert (ftp.address, ftp.error) == (None, "outside the domains followed")
+    assert (closed.status, closed.error) == (0, "ClientConnectorError")
+    assert (sso.status, sso.location) == (302, ProbeAddress(IDP, T.LOGIN, ("AuthState",)))
+    assert [request for request in tabulex.requests if "/api/" in request and not request.startswith("GET ")] == []
+
+
+def test_at_most_the_most_reads_are_read() -> None:
+    report, _, _, _ = _probe(reads=tuple(f"/api/text?n={index}" for index in range(40)))
+    assert len(report.reads) == 30
+
+
+@pytest.mark.parametrize(("onward", "next_step"), [("refresh", "refresh"), ("script", "script")])
+def test_a_meta_refresh_or_a_scripts_plain_redirect_is_followed(onward: str, next_step: str) -> None:
+    def arrange(aula: SimulatedAulaApi, tabulex: SimulatedTabulex) -> None:
+        tabulex.onward = onward
+
+    report, _, _, _ = _probe(arrange)
+    acs = report.hops[3]
+    assert (acs.address.path, acs.status, acs.next) == (T.ACS, 200, next_step)
+    assert report.ended == "a page a browser stays on" and report.hops[-1].page is not None
+    assert report.hops[-1].page.title == "Tabulex"
+
+
+def test_a_temporary_redirect_keeps_the_method_and_the_form() -> None:
+    def arrange(aula: SimulatedAulaApi, tabulex: SimulatedTabulex) -> None:
+        tabulex.moved_acs = True
+
+    report, _, tabulex, _ = _probe(arrange)
+    assert [(hop.method, hop.address.path, hop.status) for hop in report.hops[3:5]] == [("POST", T.ACS, 307), ("POST", f"{T.ACS}2", 303)]
+    assert report.ended == "a page a browser stays on" and f"POST {SP}{T.ACS}2" in tabulex.requests
 
 
 def test_a_stepped_up_login_asks_for_the_higher_assurance_level() -> None:
@@ -132,19 +211,23 @@ def test_a_host_outside_ists_and_tabulexs_stops_the_chain_unasked() -> None:
     report, _, tabulex, _ = _probe(arrange)
     assert (report.ended, report.stopped_at) == ("a host outside the domains followed", ELSEWHERE)
     assert report.hops[-1].location == ProbeAddress(ELSEWHERE, "/login", ("SAMLRequest",))
-    assert not [request for request in tabulex.requests if request.startswith(ELSEWHERE)]
-    assert [hop.address.host for hop in report.portal_hops] == [PORTAL, IDP]
-    assert (report.portal_ended, report.scripts) == ("a host outside the domains followed", ())
+    assert not [request for request in tabulex.requests if ELSEWHERE in request]
+    assert [hop.address.path for hop in report.portal_hops] == ["/", T.PRP, T.DISCO]
 
 
-def test_a_page_that_needs_javascript_ends_the_chain_and_is_reported() -> None:
+def test_a_page_a_browser_stays_on_ends_the_chain_with_how_it_is_built_and_the_scripts_it_loads() -> None:
     def arrange(aula: SimulatedAulaApi, tabulex: SimulatedTabulex) -> None:
         tabulex.needs_javascript = True
 
-    report, _, tabulex, _ = _probe(arrange)
-    assert report.hops[-1].address.path == PRP and report.hops[-1].needs_javascript
-    assert report.ended == "a page that needs JavaScript"
-    assert f"{IDP}/login.js" not in tabulex.requests
+    report, _, _, _ = _probe(arrange)
+    login = report.hops[-1]
+    assert (login.address.path, login.next, report.ended) == (T.LOGIN, None, "a page a browser stays on")
+    assert login.page is not None and login.page.scripts == (ProbeAddress(IDP, "/login.js", ()),)
+    disco = report.portal_hops[-1]
+    assert disco.page is not None and disco.page.title == "Vælg institution (identitetsudbyder)"
+    assert disco.page.forms[0].fields == (("return", "hidden"), ("idpentityid", "hidden"))
+    assert report.portal_ended == "a page a browser stays on"
+    assert [(script.address.host, script.address.path, script.status) for script in report.scripts] == [(IDP, "/login.js", 500), (SP, "/jquery.js", 403)]
 
 
 def test_a_chain_longer_than_the_most_steps_is_given_up() -> None:
@@ -155,23 +238,24 @@ def test_a_chain_longer_than_the_most_steps_is_given_up() -> None:
     assert (len(report.hops), report.ended) == (MAX_HOPS, f"{MAX_HOPS} steps")
 
 
-def test_an_answer_that_leads_nowhere_ends_the_chain() -> None:
+def test_an_answer_that_leads_nowhere_ends_the_chain_with_how_its_page_is_built() -> None:
     def arrange(aula: SimulatedAulaApi, tabulex: SimulatedTabulex) -> None:
         aula.widget_fields["0047"] = {**tabulex.widget, "url": tabulex.widget_url.replace("made-up-app", "another-app")}
 
     report, _, tabulex, _ = _probe(arrange)
     [hop] = report.hops
-    assert (hop.status, hop.needs_javascript, report.ended) == (400, False, "an answer of HTTP 400")
+    assert (hop.status, hop.next, report.ended) == (400, None, "an answer of HTTP 400")
+    assert hop.page == ProbePage()
     assert tabulex.forms == []
 
 
 def test_a_network_error_ends_the_chain_and_the_read_of_the_portal_with_its_kind() -> None:
     def arrange(aula: SimulatedAulaApi, tabulex: SimulatedTabulex) -> None:
-        aula.widget_fields["0047"] = {**tabulex.widget, "url": f"http://{IDP}:1{AULA_PHP}?appid=made-up-app"}
+        aula.widget_fields["0047"] = {**tabulex.widget, "url": f"http://{SP}:1{T.AULA_PHP}?appid=made-up-app"}
 
     async def unreachable_portal() -> TabulexProbeReport:
         async with SimulatedAulaApi() as aula, SimulatedTabulex(aula) as tabulex, tabulex.session() as chain:
-            return await follow(chain, "0047", f"http://{IDP}:1{AULA_PHP}", {}, SimulatedTabulex.DOMAINS, f"http://{PORTAL}:1/")
+            return await follow(chain, "0047", f"http://{SP}:1{T.AULA_PHP}", {}, SimulatedTabulex.DOMAINS, f"http://{PORTAL}:1/")
 
     report, _, _, _ = _probe(arrange)
     [hop] = report.hops
@@ -205,18 +289,19 @@ def test_a_user_context_aula_tells_nothing_of_is_refused() -> None:
 
 def test_without_a_session_the_probe_has_its_own_and_never_leaves_the_domains_followed() -> None:
     report, _, tabulex, _ = _probe(own_session=True)
-    assert (report.hops, report.stopped_at, report.portal_hops, report.portal_ended, report.scripts) == (
-        (), IDP, (), "a host outside the domains followed", ()
+    assert (report.hops, report.stopped_at, report.portal_hops, report.portal_stopped_at, report.scripts, report.cookies) == (
+        (), SP, (), "outside.test", (), ()
     )
     assert tabulex.requests == []
 
 
-def test_the_report_and_the_log_tell_no_token_cookie_assertion_field_or_text(caplog: pytest.LogCaptureFixture) -> None:
+def test_the_report_and_the_log_tell_no_token_cookie_assertion_field_or_name(caplog: pytest.LogCaptureFixture) -> None:
     caplog.set_level(logging.DEBUG)
-    report, aula, tabulex, _ = _probe()
+    report, aula, tabulex, _ = _probe(reads=("/api/children", "/api/text"))
     text = json.dumps(report.as_dict(), ensure_ascii=False)
-    secrets = [*aula.widget_tokens, tabulex.assertion, tabulex.idp_session, tabulex.portal_session, "made-up-app", "guardian-4821", "child-7713", "Fravær", "Alma"]
-    assert [secret for secret in secrets if secret in text or secret in caplog.text] == []
+    told = [*aula.widget_tokens, tabulex.assertion, tabulex.state, tabulex.sp_session, tabulex.login_token, tabulex.signed_in, tabulex.portal_session]
+    told += ["made-up-app", "guardian-4821", "child-7713", "Alma", "7713"]
+    assert [secret for secret in told if secret in text or secret in caplog.text] == []
     assert SimulatedTabulex.SCRIPT in [script["text"] for script in json.loads(text)["scripts"]]
 
 
@@ -236,24 +321,45 @@ def test_only_ists_and_tabulexs_hosts_are_followed(host: str, expected: bool) ->
     assert allowed(host, ("ist.dk", "tabulex.dk", "tabulex.net")) is expected
 
 
-def test_a_page_that_submits_a_form_with_a_field_to_fill_is_no_form_it_submits_by_itself() -> None:
-    page = BeautifulSoup('<form><input type="text" name="user"/></form><script>document.forms[0].submit()</script>', "html.parser")
-    assert _auto_form(page) is None
+_HIDDEN = '<form method="post" action="/acs"><input type="hidden" name="SAMLResponse" value="x"/></form>'
+
+
+@pytest.mark.parametrize(
+    ("page", "submits"),
+    [
+        (f'<script src="/simplesaml/resources/post.js"></script><noscript><p>Press</p></noscript>{_HIDDEN}', True),
+        (_HIDDEN.replace("</form>", '<input type="submit" id="postLoginSubmitButton"/></form>'), True),
+        (f"{_HIDDEN}<script>window.setTimeout('document.forms[0].submit()', 0);</script>", True),
+        (f'<body onload="document.forms[0].submit()">{_HIDDEN}</body>', True),
+        (f"{_HIDDEN}<script>function choose() {{ document.forms[0].submit(); }}</script>", False),
+        (f'{_HIDDEN}<script src="/jquery.js"></script><button onclick="document.forms[0].submit()">Vælg</button>', False),
+        (_HIDDEN, False),
+        ('<form><input type="text" name="user"/></form><script>document.forms[0].submit()</script>', False),
+        ('<form><input type="hidden" name="a"/><select name="b"></select></form><script>document.forms[0].submit()</script>', False),
+        ("<form></form><script>document.forms[0].submit()</script>", False),
+    ],
+    ids=["simplesamlphp", "simplesamlphp button", "ad fs", "onload", "in a function", "on a button", "no script", "a field to fill", "a choice", "no fields"],
+)
+def test_only_a_form_of_hidden_fields_a_page_submits_as_it_loads_is_submitted(page: str, submits: bool) -> None:
+    assert (_auto_form(BeautifulSoup(page, "html.parser")) is not None) is submits
 
 
 def test_a_page_is_told_by_its_forms_scripts_masked_code_and_refresh_never_its_values_or_text() -> None:
     page = BeautifulSoup(
+        "<title>Log ind 1234567 a1b2c3d4e5f6a1b2c3d4e5f6a1b2</title><h2>Der skete en  fejl</h2><h3>Sporings-ID: 8b506243b6</h3><h4> </h4>"
         '<meta http-equiv="refresh" content="0; url=\'/next?AuthState=secret-state\'">'
         '<form action="/simplesaml/login.php?AuthState=secret-state" method="post"><input type="hidden" name="AuthState" value="secret-state"/>'
         '<input name="user"/><select name="child"><option>Alma</option></select><button type="submit">Videre</button></form>'
         '<script src="/js/login.js?v=1"></script>'
-        '<script>var token = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2"; window.location = "https://foraeldre.tabulex.net/#/fravaer?x=secret";</script>'
+        '<script>var token = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2"; window.location = "https://foraeldre.tabulex.net/?x=secret#/fravaer";</script>'
         "<p>Velkommen Alma</p>",
         "html.parser",
     )
     told = _page(page, "https://borger-aula-login.tabulex.dk/simplesaml/module.php/tabulexaulalogin/login.php?AuthState=secret-state")
     host = "borger-aula-login.tabulex.dk"
     assert told == ProbePage(
+        "Log ind «7» «28»",
+        ("Der skete en fejl", "Sporings-ID: 8b«6»b6"),
         (
             ProbeForm(
                 ProbeAddress(host, "/simplesaml/login.php", ("AuthState",)),
@@ -262,10 +368,16 @@ def test_a_page_is_told_by_its_forms_scripts_masked_code_and_refresh_never_its_v
             ),
         ),
         (ProbeAddress(host, "/js/login.js", ("v",)),),
-        ('var token = "«28»"; window.location = "foraeldre.tabulex.net/";',),
+        ('var token = "«28»"; window.location = "foraeldre.tabulex.net/?x";',),
         ProbeAddress(host, "/next", ("AuthState",)),
+        ProbeAddress("foraeldre.tabulex.net", "/", ("x",)),
     )
     assert "secret" not in repr(told) and "Alma" not in repr(told)
+
+
+def test_a_scripts_text_is_kept_but_for_runs_long_enough_to_be_a_token() -> None:
+    token = "a1" * 30
+    assert masked_script(f'var api = "/api/fravaer"; var t = "{token}";') == 'var api = "/api/fravaer"; var t = "«60»";'
 
 
 def test_a_page_without_forms_scripts_or_refresh_is_told_empty() -> None:

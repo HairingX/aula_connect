@@ -72,18 +72,30 @@ not send is refused with `ValueError`, before anything is sent.
 - **Messages.** `threads_about(child)` gives the threads of the newest page that are about the
   child, the newest first; `reply(thread_id, text)` sends plain text to everyone still in a
   thread, as HTML paragraphs, at most 6600 characters. It never marks a thread read.
-- **Probing Tabulex's login.** `probe_tabulex()` follows, once, how IST's Tabulex logs the
-  guardian in from Aula, to learn how its parent portal works: it posts the login's Tabulex
-  widget's form as Aula's portal does on a desktop, with a new widget token, and follows
-  redirects and the forms a page submits by itself, at most 15 steps and only on hosts under
-  `ist.dk`, `tabulex.dk` and `tabulex.net`; then it follows the portal's own login the same way,
-  with what the first chain left, and reads the scripts of the portal's page it ends at, from
-  the portal's own site. It posts nothing else. Its report, kept as `tabulex_probe`, tells each
-  step's method, host, path, the names of its query and form fields, its status, where it
-  redirected, the names and domains of the cookies set, and of a page that ends a chain: its
-  forms' fields by name and type, the scripts it loads, its own code with every string masked
-  but an address's host and path, and a meta refresh; and the full text of the portal's own
-  scripts. Never a value of a token, cookie or field, nor any text of a page.
+- **Probing Tabulex's login.** `probe_tabulex(reads=())` follows, once, how IST's Tabulex logs
+  the guardian in from Aula, to learn how its parent portal works. It posts the login's Tabulex
+  widget's form as Aula's portal does on a desktop, with a new widget token, and follows the
+  chain as a browser does: redirects, a form of hidden fields the page submits as it loads (by
+  an inline script, its body's `onload`, or a script it loads, as SimpleSAMLphp's `post.js`
+  does), a meta refresh, and a script's plain redirect. It goes at most 25 steps, only on
+  hosts under `ist.dk`, `tabulex.dk` and `tabulex.net`. Then it follows the portal's own login
+  the same way, with what the first chain left, reads the scripts the pages both chains end at
+  load from those hosts, and reads each of `reads` with GET: an address on those hosts, or a
+  path on the portal's site, such as an API address found in the scripts. It posts nothing
+  else. Its report, kept as `tabulex_probe`, tells:
+  - each step's method, host, path, the names of its query and form fields, its status and
+    content type, where it went on to and how, the names and domains of the cookies set, and
+    how each page is built: its title and headings, its forms' fields by name and type, the
+    scripts it loads, its own code with every string masked but an address's host and path,
+    and a meta refresh or script redirect;
+  - the scripts' text, every run of 40 letters and digits masked;
+  - the names and domains of the cookies held at the end;
+  - for each read, its status and content type, where it redirected (not followed), and its
+    answer: JSON by the type at each place and pseudonymised as `responses` pseudonymises
+    Aula's, an HTML page as above, a script's text as above, anything else by its length.
+
+  A title or heading has each number of four digits or more and each long run masked. Never a
+  value of a token, cookie or field.
 - **The child's picture.** `get_profile_picture(child)` reads the child's profile picture anew:
   its `url` expires within about an hour.
 

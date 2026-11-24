@@ -469,18 +469,21 @@ class AulaClient:
         session: aiohttp.ClientSession | None = None,
         domains: tuple[str, ...] = TABULEX_DOMAINS,
         portal: str = TABULEX_PORTAL,
+        reads: Sequence[str] = (),
     ) -> TabulexProbeReport:
-        """Follow, once, how IST's Tabulex logs the guardian in from Aula, and read what its parent portal loads.
+        """Follow, once, how IST's Tabulex logs the guardian in from Aula, and read what its parent portal loads and answers.
 
         The login's Tabulex widget is opened as Aula's portal opens it on a desktop, with a new
         widget token, and the login chain followed on `domains` only; see
         `aula_connect.tabulex_probe.follow`. It only reads: nothing is posted but the widget's
-        form and the forms the chain's pages submit by themselves. The report tells no value of
-        a token, a cookie or a field, and is kept as `tabulex_probe`.
+        form and the forms the chain's pages submit by themselves, and `reads` are read with GET.
+        The report tells no value of a token, a cookie or a field, a JSON answer only by its shape
+        and pseudonymised, and is kept as `tabulex_probe`.
 
         Args:
             session: The session the chain is followed on, with cookies of its own, not
                 Aula's; a new one where None.
+            reads: Addresses on `domains`, or paths on the portal's site, read once logged in.
 
         Raises:
             NoTabulexWidgetError: The login has no widget of IST's that signs in to Tabulex.
@@ -490,9 +493,9 @@ class AulaClient:
         widget_id, url, fields = await self._proxy.tabulex_login_form()
         if session is None:
             async with aiohttp.ClientSession() as own:
-                report = await follow(own, widget_id, url, fields, domains, portal)
+                report = await follow(own, widget_id, url, fields, domains, portal, reads)
         else:
-            report = await follow(session, widget_id, url, fields, domains, portal)
+            report = await follow(session, widget_id, url, fields, domains, portal, reads)
         self._tabulex_probe = report
         return report
 
