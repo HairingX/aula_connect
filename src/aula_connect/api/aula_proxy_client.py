@@ -21,7 +21,7 @@ from ..redact import redact
 from .aula_errors import AulaCredentialError, AulaApiError, ParseError
 from .models.constants import AulaWidgetId
 from .models.aula_notification_models import NotificationArea
-from .aula_errors import NoSickReportRouteError, NoTabulexWidgetError, SickReportRouteNotSupportedError
+from .aula_errors import NoSickReportRouteError, SickReportRouteNotSupportedError
 from .models.aula_parser import now
 from .models.module import (
     AULA_NOTIFICATION_TYPES,
@@ -723,47 +723,43 @@ class AulaProxyClient:
         """The children's institution profile ids as a query's parameters, each once."""
         return "".join(f"&{name}={child_id}" for child_id in dict.fromkeys(child.id for child in children))
 
-    async def tabulex_login_form(self) -> tuple[str, str, Dict[str, str]]:
-        """The login's Tabulex widget's id, its address, and the fields Aula's portal posts there on a desktop.
+    async def sso_login_forms(self) -> List[tuple[str, str, str, Dict[str, str]]]:
+        """Each widget that logs in to a service of its own: its id, supplier, address, and the fields Aula's portal posts there on a desktop.
 
-        The user's context is read anew, as the portal has it, and a new widget token fetched.
-        The fields hold the token: they are a credential, never to be logged.
-
-        Raises:
-            NoTabulexWidgetError: The login has no widget of IST's that signs in to Tabulex.
-            AulaApiError: No widget token could be fetched.
+        The user's context is read anew, as the portal has it, and a new widget token fetched for
+        each. The fields hold the token: they are a credential, never to be logged. A widget
+        whose token could not be fetched is left out; none where Aula tells nothing of the context.
         """
         url = f"{self._apiurl}?method=profiles.getProfileContext&portalrole=guardian"
         response: AulaGetProfileContextResponse | None = await self._read("profiles.getProfileContext", "profile context", lambda: self._session.get(url))
         if response is None:
-            raise NoTabulexWidgetError("Aula tells nothing of the user's context")
+            return []
         data = response["data"]
         widgets = [configuration["widget"] for configuration in data["pageConfiguration"]["widgetConfigurations"]]
-        widget = next(
-            (
-                found for found in widgets
-                if found.get("type") == "sso" and self._is_tabulex(found.get("widgetSupplier"), found.get("url"))
-            ),
-            None,
-        )
-        if widget is None:
-            raise NoTabulexWidgetError("The login has no widget of IST's that signs in to Tabulex")
-        widget_id, address = str(widget.get("widgetId") or ""), str(widget.get("url") or "")
-        token = await self._refresh_token(widget_id, force=True)
         institutions = data.get("institutions") or []
         week = now().isocalendar()
-        fields = {
-            "sessionUUID": data["userId"],
-            "isMobileApp": "false",
-            "aulaToken": "" if token is None else token.bearer_token.removeprefix("Bearer "),
-            "assuranceLevel": "3" if data.get("isSteppedUp") else "2",
-            "userProfile": str((data.get("institutionProfile") or {}).get("role") or ""),
-            "childFilter": ",".join(dict.fromkeys(child["userId"] for institution in institutions for child in institution.get("children") or [])),
-            "institutionFilter": ",".join(dict.fromkeys(str(institution.get("institutionCode") or "") for institution in institutions)),
-            "group": "",
-            "currentWeekNumber": f"{week.year}-W{week.week}",
-        }
-        return widget_id, address, fields
+        forms: List[tuple[str, str, str, Dict[str, str]]] = []
+        for widget in widgets:
+            widget_id, address = str(widget.get("widgetId") or ""), str(widget.get("url") or "")
+            if widget.get("type") != "sso" or not address.startswith(("https://", "http://")):
+                continue
+            try:
+                token = await self._refresh_token(widget_id, force=True)
+            except AulaApiError:
+                continue
+            fields = {
+                "sessionUUID": data["userId"],
+                "isMobileApp": "false",
+                "aulaToken": "" if token is None else token.bearer_token.removeprefix("Bearer "),
+                "assuranceLevel": "3" if data.get("isSteppedUp") else "2",
+                "userProfile": str((data.get("institutionProfile") or {}).get("role") or ""),
+                "childFilter": ",".join(dict.fromkeys(child["userId"] for institution in institutions for child in institution.get("children") or [])),
+                "institutionFilter": ",".join(dict.fromkeys(str(institution.get("institutionCode") or "") for institution in institutions)),
+                "group": "",
+                "currentWeekNumber": f"{week.year}-W{week.week}",
+            }
+            forms.append((widget_id, str(widget.get("widgetSupplier") or ""), address, fields))
+        return forms
 
     async def get_presence_configurations(self, children: List[AulaChildProfile]) -> List[AulaPresenceConfiguration]:
         """What the children's guardian may see and do in the presence module, for each child Aula tells it of."""

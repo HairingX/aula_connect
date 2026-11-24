@@ -195,6 +195,9 @@ TABULEX_ANSWERS: list[tuple[str, str, int]] = [
     ("POST", f"http://{SimulatedTabulex.SP}{{port}}{SimulatedTabulex.ACS}", 403),
     ("GET", f"http://{SimulatedTabulex.SP}{{port}}/elsewhere", 403),
     ("GET", f"http://{SimulatedTabulex.IDP}{{port}}/simplesaml/resources/post.js", 200),
+    ("GET", f"http://{SimulatedTabulex.SP}{{port}}{SimulatedTabulex.PRP}", 302),
+    ("GET", f"http://{SimulatedTabulex.SP}{{port}}{SimulatedTabulex.DISCO}", 200),
+    ("GET", f"http://{SimulatedTabulex.API}{{port}}/v1/children", 401),
     ("POST", f"http://{SimulatedTabulex.PORTAL}{{port}}/", 400),
     ("GET", f"http://{SimulatedTabulex.ELSEWHERE}{{port}}/login", 200),
 ]

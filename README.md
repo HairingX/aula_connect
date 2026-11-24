@@ -72,27 +72,39 @@ not send is refused with `ValueError`, before anything is sent.
 - **Messages.** `threads_about(child)` gives the threads of the newest page that are about the
   child, the newest first; `reply(thread_id, text)` sends plain text to everyone still in a
   thread, as HTML paragraphs, at most 6600 characters. It never marks a thread read.
-- **Probing Tabulex's login.** `probe_tabulex(reads=())` follows, once, how IST's Tabulex logs
-  the guardian in from Aula, to learn how its parent portal works. It posts the login's Tabulex
-  widget's form as Aula's portal does on a desktop, with a new widget token, and follows the
-  chain as a browser does: redirects, a form of hidden fields the page submits as it loads (by
-  an inline script, its body's `onload`, or a script it loads, as SimpleSAMLphp's `post.js`
-  does), a meta refresh, and a script's plain redirect. It goes at most 25 steps, only on
-  hosts under `ist.dk`, `tabulex.dk` and `tabulex.net`. Then it follows the portal's own login
-  the same way, with what the first chain left, reads the scripts the pages both chains end at
-  load from those hosts, and reads each of `reads` with GET: an address on those hosts, or a
-  path on the portal's site, such as an API address found in the scripts. It posts nothing
-  else. Its report, kept as `tabulex_probe`, tells:
+- **Probing the widgets' services.** `probe_widgets(reads=())` learns, in one run, how each
+  widget that logs in to a service of its own (an `sso` widget, such as IST's into Tabulex) logs
+  the guardian in, and what that service loads and answers. For each, it posts the widget's form
+  as Aula's portal does on a desktop, with a new widget token, and follows the chain as a
+  browser does: redirects, a form of hidden fields the page submits as it loads (by an inline
+  script, its body's `onload`, or a script it loads, as SimpleSAMLphp's `post.js` does), a meta
+  refresh, and a script's plain redirect. It goes at most 25 steps, on any host but the logins
+  of Aula, MitID and UniLogin themselves, which it never enters. At the page the chain ends at:
+  - it reads the scripts the page loads, from any host but those logins;
+  - it finds every address the page's and scripts' code names, and reads with GET, sent as the
+    app's own requests are, those on a site the chain reached whose path names no change (no
+    delete, save, send, meld, log off and the like): those like an API's first, a relative one
+    against the page's base and each API base the code names, at most 60; then, at most 20,
+    those whose placeholder (`{childId}`, `:id`) or query (`?barnId`) a key of an earlier JSON
+    answer fills; once an answer hands out a token, the reads after it send it as a bearer
+    token, as an app does;
+  - then it reads each of `reads` with GET, an address or a path against the page, at most 30.
+
+  A widget's probe reads no more after 150 seconds, and counts what it did not read. It posts
+  nothing but the widget's form and the forms the chain's pages submit by themselves. Its
+  report, kept as `widget_probe`, tells for each widget:
   - each step's method, host, path, the names of its query and form fields, its status and
     content type, where it went on to and how, the names and domains of the cookies set, and
     how each page is built: its title and headings, its forms' fields by name and type, the
     scripts it loads, its own code with every string masked but an address's host and path,
     and a meta refresh or script redirect;
+  - the hosts reached, the cookies held at the end by name and domain, and every address the
+    code names, a query's values left out;
   - the scripts' text, every run of 40 letters and digits masked;
-  - the names and domains of the cookies held at the end;
-  - for each read, its status and content type, where it redirected (not followed), and its
-    answer: JSON by the type at each place and pseudonymised as `responses` pseudonymises
-    Aula's, an HTML page as above, a script's text as above, anything else by its length.
+  - for each read, the address as the code names it (a value filled in told as `«name»`), its
+    status and content type, where it redirected (not followed), and its answer: JSON by the
+    type at each place and pseudonymised as `responses` pseudonymises Aula's, an HTML page as
+    above, a script's text as above, anything else by its length.
 
   A title or heading has each number of four digits or more and each long run masked. Never a
   value of a token, cookie or field.
@@ -165,8 +177,9 @@ or a `body` that name a method or a token.
 `SimulatedAulaLogin` answers the whole login chain - Aula's OAuth, UniLogin, NemLog-in and a
 simulated MitID - and `SimulatedAulaApi` Aula's API and its widgets, with the data a test gives
 it, and keeps what the writes above change, refusing a body Aula's portal would not send as Aula
-does, with HTTP 400 and code 40. `SimulatedTabulex` answers IST's and Tabulex's login chain
-under made-up host names, reached through its own `session()` only. Each checks the cookies, tokens and proofs the real one checks, and takes a
+does, with HTTP 400 and code 40. `SimulatedTabulex` answers IST's and Tabulex's login chain,
+the portal's API and another widget's service under made-up host names, reached through its own
+`session()` only. Each checks the cookies, tokens and proofs the real one checks, and takes a
 `mitid_connect.testing.Network` that gives each answer a latency and fails a share of them, for
 stress tests.
 

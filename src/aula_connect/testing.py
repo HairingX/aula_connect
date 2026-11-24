@@ -31,7 +31,7 @@ from mitid_connect.testing import Network, SimulatedMitID, User
 
 from .api.aula_proxy_client import AulaProxyClient
 from .login import AulaLoginClient
-from .tabulex_probe import probe_session
+from .widget_probe import probe_session
 
 APP_REDIRECT_URI = "https://app-private.aula.dk"
 """Where Aula sends the app back to, with the code; it is never requested."""
@@ -840,8 +840,20 @@ class SimulatedTabulex:
     ELSEWHERE = "login.elsewhere.test"
     DOMAINS = ("tabulex.test",)
     """The domains a probe of the simulated chain follows."""
-    SCRIPT = 'angular.module("fravaer").service("api", function ($http) { return $http.get("/api/fravaer"); });'
-    """The text of the portal's own script."""
+    API = "api.tabulex.test"
+    """The host of the portal's API, which hands out a bearer token and takes it."""
+    CDN = "static.cdn.test"
+    """A host of scripts the portal loads, on no site of Tabulex's."""
+    OTHER = "app.hjerne.test"
+    """The host of another widget's service, which answers its form with a page of its own."""
+    SCRIPT = (
+        'angular.module("fravaer").service("api", function ($http) {'
+        ' $http.get("/api/children"); $http.get("api/children/{childId}/absence"); $http.post("/api/fravaer/meldSyg");'
+        ' $http.get("/Account/LogOff"); $http.get("/api/settings?from=2026-11-01"); var kind = "application/json";'
+        ' var view = "views/fravaer.html"; var chunk = "scripts/chunk.js"; var logo = "/img/logo.png";'
+        ' var cdn = "https://cdn.elsewhere.test/x/y"; var unknown = "api/{unknown}/x"; });'
+    )
+    """The text of the portal's own script, naming the addresses its code reads and changes."""
     CHUNK = 'define("fravaer", function () { return "/api/fravaer/syg"; });'
     """The text of a script the portal loads on demand."""
     AULA_PHP = "/simplesaml/module.php/tabulexaulalogin/aula.php"
@@ -869,6 +881,9 @@ class SimulatedTabulex:
         self.sp_session = secrets.token_hex(8)
         self.login_token = secrets.token_hex(8)
         self.signed_in = secrets.token_hex(8)
+        self.api_token = secrets.token_hex(16)
+        self.cdn_script = ""
+        """The text of the script the portal loads from another host, naming its API's addresses; set as it starts."""
         self.portal_session = base64.b64encode(secrets.token_bytes(39) + b"\xfb\xff").decode()
         """The portal's session, in base64 as a real portal's, with a "/" and padding."""
         self.forms: list[dict[str, str]] = []
@@ -882,6 +897,7 @@ class SimulatedTabulex:
     async def __aenter__(self) -> Self:
         self._server = TestServer(self.app)
         await self._server.start_server(access_log=None)
+        self.cdn_script = self._cdn_script()
         return self
 
     async def __aexit__(
@@ -904,6 +920,33 @@ class SimulatedTabulex:
         """Aula's further fields of its Tabulex widget."""
         return {"widgetSupplier": "IST", "type": "sso", "isSecure": True, "url": self.widget_url}
 
+    def _cdn_script(self) -> str:
+        api = self._base(self.API)
+        return f'fetch("{api}/v1/token").then(function () {{ return fetch("{api}/v1/children"); }});'
+
+    def _api(self, request: web.Request) -> web.StreamResponse:
+        if request.path == "/v1/token":
+            return web.json_response({"access_token": self.api_token, "expires_in": 3600})
+        if request.path == "/v1/children" and request.headers.get("Authorization") == f"Bearer {self.api_token}":
+            return web.json_response({"children": [{"childId": 7713, "firstName": "Alma"}]})
+        return web.Response(status=401)
+
+    def _other(self, request: web.Request) -> web.StreamResponse:
+        if request.path == "/rest/data/kids":
+            return web.json_response([{"kidId": 55}])
+        if request.path == "/rest/data/kid" and request.query.get("kidId") == "55":
+            return web.json_response({"kidId": 55, "name": "Bo"})
+        if request.method == "POST" and request.path == "/aula/login":
+            rest = f"{self._base(self.OTHER)}/rest/"
+            code = f'var rest = "{rest}"; get("data/kids"); get("data/kid?kidId");'
+            return web.Response(text=f'<base href="/app/"><title>Hjerne</title><h1>Velkommen</h1><script>{code}</script>', content_type="text/html")
+        return web.Response(status=404)
+
+    @property
+    def other_widget(self) -> dict[str, object]:
+        """Aula's further fields of another widget that logs in to a service of its own."""
+        return {"widgetSupplier": "Hjernen&Hjertet", "type": "sso", "url": f"{self._base(self.OTHER)}/aula/login"}
+
     @property
     def portal(self) -> str:
         """The address of the parent portal."""
@@ -915,7 +958,8 @@ class SimulatedTabulex:
 
     def connector(self) -> aiohttp.TCPConnector:
         """A connector that reaches the simulated hosts on this machine, and no other host."""
-        return aiohttp.TCPConnector(resolver=_LocalResolver({self.SP, self.IDP, self.PORTAL, self.ELSEWHERE}))
+        hosts = {self.SP, self.IDP, self.PORTAL, self.ELSEWHERE, self.OTHER, self.API, self.CDN}
+        return aiohttp.TCPConnector(resolver=_LocalResolver(hosts))
 
     async def _handle(self, request: web.Request) -> web.StreamResponse:
         host = request.host.split(":")[0]
@@ -926,6 +970,12 @@ class SimulatedTabulex:
             return self._idp(request)
         if host == self.PORTAL:
             return await self._portal(request)
+        if host == self.CDN:
+            return web.Response(text=self.cdn_script, content_type="application/javascript")
+        if host == self.API:
+            return self._api(request)
+        if host == self.OTHER:
+            return self._other(request)
         return web.Response(text="<p>Somewhere else</p>", content_type="text/html")
 
     @staticmethod
@@ -1034,6 +1084,7 @@ class SimulatedTabulex:
                 f'<script src="/scripts/app.js?v={self.portal_session}"></script><script src="/scripts/gone.js"></script>'
                 f'<script src="http://{self.PORTAL}:1/closed.js"></script><script src="https://cdn.elsewhere.test/lib.js"></script>'
                 f'<script src="http://{self.PORTAL}:{port}/scripts/app.js?v={self.portal_session}"></script><script>var signedIn = true;</script>'
+                f'<script src="http://{self.CDN}:{port}/lib.js"></script>'
             )
             return web.Response(text=f"<html><head><title>Tabulex</title>{scripts}</head><body><p>Fravær for Alma</p></body></html>", content_type="text/html")
         if request.path == "/scripts/app.js":
@@ -1041,8 +1092,17 @@ class SimulatedTabulex:
         if request.path == "/scripts/chunk.js":
             return web.Response(text=self.CHUNK, content_type="text/javascript")
         if request.path == "/api/children":
-            body = [{"id": 7713, "name": "Alma Hansen", "absenceType": "Sygdom", "present": False, "note": None}]
+            body = [{"childId": 7713, "name": "Alma Hansen", "absenceType": "Sygdom", "present": False, "note": None}]
             return web.json_response(body)
+        if request.path == "/api/children/7713/absence":
+            return web.json_response([{"date": "2026-11-24", "absenceType": "Sygdom"}])
+        if request.path == "/api/settings":
+            return web.json_response({"sickReportsEnabled": True})
+        if request.path == "/views/fravaer.html":
+            return web.Response(
+                text='<h2>Meld fravær</h2><form ng-submit="meld()"><input name="fra" type="date"/><select name="aarsag"></select></form>',
+                content_type="text/html",
+            )
         if request.path == "/api/broken":
             return web.Response(text="{not json", content_type="application/json")
         if request.path == "/api/text":

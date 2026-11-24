@@ -46,7 +46,7 @@ from .pseudonym import pseudonymised, shapes
 from .login import AulaLoginClient
 from .redact import redact
 from .login.exceptions import NetworkError, TokenExpiredError
-from .tabulex_probe import TABULEX_DOMAINS, TABULEX_PORTAL, TabulexProbeReport, follow, probe_session
+from .widget_probe import NOT_FOLLOWED, WidgetProbe, WidgetProbeReport, probe, probe_session
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ class AulaClient:
         self._token_lock = asyncio.Lock()
         self._proxy = AulaProxyClient(session, access_token)
         self._proxy.set_token_refresh_callback(self._force_refresh_access_token)
-        self._tabulex_probe: TabulexProbeReport | None = None
+        self._widget_probe: WidgetProbeReport | None = None
 
     @property
     def api(self) -> AulaProxyClient:
@@ -464,45 +464,45 @@ class AulaClient:
         await self._ensure_valid_token()
         return await self._proxy.get_profile_picture(child)
 
-    async def probe_tabulex(
+    async def probe_widgets(
         self,
         session: aiohttp.ClientSession | None = None,
-        domains: tuple[str, ...] = TABULEX_DOMAINS,
-        portal: str = TABULEX_PORTAL,
         reads: Sequence[str] = (),
-    ) -> TabulexProbeReport:
-        """Follow, once, how IST's Tabulex logs the guardian in from Aula, and read what its parent portal loads and answers.
+        not_followed: Sequence[str] = NOT_FOLLOWED,
+    ) -> WidgetProbeReport:
+        """Follow, once, how each widget that logs in to a service of its own logs the guardian in, and read what the service loads and names.
 
-        The login's Tabulex widget is opened as Aula's portal opens it on a desktop, with a new
-        widget token, and the login chain followed on `domains` only; see
-        `aula_connect.tabulex_probe.follow`. It only reads: nothing is posted but the widget's
-        form and the forms the chain's pages submit by themselves, and `reads` are read with GET.
-        The report tells no value of a token, a cookie or a field, a JSON answer only by its shape
-        and pseudonymised, and is kept as `tabulex_probe`.
+        Each widget is opened as Aula's portal opens it on a desktop, with a new widget token, its
+        login chain followed as a browser follows it, and its service's scripts and the
+        addresses they name read; see `aula_connect.widget_probe.probe`. It only reads: nothing
+        is posted but the widget's form and the forms the chain's pages submit by themselves,
+        and no address whose path names a change is read unasked. The report tells no value of
+        a token, a cookie or a field, a JSON answer only by its shape and pseudonymised, and is
+        kept as `widget_probe`.
 
         Args:
-            session: The session the chain is followed on, with cookies of its own, not
-                Aula's, sent back as they were set; a new one where None.
-            reads: Addresses on `domains`, or paths on the portal's site, read once logged in.
-
-        Raises:
-            NoTabulexWidgetError: The login has no widget of IST's that signs in to Tabulex.
-            AulaApiError: No widget token could be fetched.
+            session: The session each chain is followed on, with cookies of its own, not
+                Aula's, sent back as they were set; a new one for each widget where None.
+            reads: Addresses, or paths resolved against the page each chain ends at, read too.
+            not_followed: The domains of logins never followed into.
         """
         await self._ensure_valid_token()
-        widget_id, url, fields = await self._proxy.tabulex_login_form()
-        if session is None:
-            async with probe_session() as own:
-                report = await follow(own, widget_id, url, fields, domains, portal, reads)
-        else:
-            report = await follow(session, widget_id, url, fields, domains, portal, reads)
-        self._tabulex_probe = report
+        widgets: list[WidgetProbe] = []
+        for widget_id, supplier, url, fields in await self._proxy.sso_login_forms():
+            if session is None:
+                async with probe_session() as own:
+                    widgets.append(await probe(own, widget_id, supplier, url, fields, reads, not_followed))
+            else:
+                session.cookie_jar.clear()
+                widgets.append(await probe(session, widget_id, supplier, url, fields, reads, not_followed))
+        report = WidgetProbeReport(tuple(widgets))
+        self._widget_probe = report
         return report
 
     @property
-    def tabulex_probe(self) -> TabulexProbeReport | None:
-        """The report of the newest probe of Tabulex's login; None before one."""
-        return self._tabulex_probe
+    def widget_probe(self) -> WidgetProbeReport | None:
+        """The report of the newest probe of the widgets' services; None before one."""
+        return self._widget_probe
 
 def _refuse(method: str, params: dict[str, str], body: dict[str, Any] | None) -> None:
     """Raise MethodRefusedError where `method` is not to be asked with `params` and `body`."""
