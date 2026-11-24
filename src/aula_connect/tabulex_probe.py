@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import re
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import Any, cast
+from typing import Any
 from urllib.parse import parse_qsl, urljoin, urlsplit
 
 import aiohttp
@@ -55,6 +56,32 @@ class ProbeCookie:
 
 
 @dataclass(frozen=True)
+class ProbeForm:
+    """A form on a page: where it posts, how, and the names and types of its fields, without their values."""
+    action: ProbeAddress | None
+    method: str
+    fields: tuple[tuple[str, str], ...]
+    """Each field's name and type."""
+
+
+@dataclass(frozen=True)
+class ProbePage:
+    """How a page is built, without any of its text or values.
+
+    Its scripts' own code is kept with every string replaced: an address by its host and path, as
+    `ProbeAddress` tells it, anything else by its length; and every long run of letters and
+    digits by its length, as it may be a token.
+    """
+    forms: tuple[ProbeForm, ...] = ()
+    scripts: tuple[ProbeAddress, ...] = ()
+    """The scripts it loads."""
+    inline: tuple[str, ...] = ()
+    """Its scripts' own code, every string replaced."""
+    refresh: ProbeAddress | None = None
+    """Where a meta refresh sends on to."""
+
+
+@dataclass(frozen=True)
 class ProbeHop:
     """One step of the login chain: the request, and how it was answered."""
     method: str
@@ -70,6 +97,8 @@ class ProbeHop:
     cookies: tuple[ProbeCookie, ...] = ()
     needs_javascript: bool = False
     """Whether the page seemed to need JavaScript beyond submitting a form by itself."""
+    page: ProbePage | None = None
+    """How the page that ended the chain is built."""
     error: str | None = None
     """The kind of error that came in place of an answer."""
 
@@ -85,16 +114,19 @@ class ProbeScript:
 
 @dataclass(frozen=True)
 class TabulexProbeReport:
-    """What the probe found: each step of the login chain, the portal's page and its scripts."""
+    """What the probe found: the login chain from Aula, the portal's own login chain, and the portal's scripts."""
     widget_id: str
     hops: tuple[ProbeHop, ...]
     ended: str
-    """Why the chain ended."""
+    """Why the chain from Aula ended."""
     stopped_at: str | None
-    """The host outside the domains followed where the chain was stopped; None where it was not."""
-    portal: ProbeHop | None
-    """The read of the portal's page; None where its host is outside the domains followed."""
+    """The host outside the domains followed where the chain from Aula was stopped; None where it was not."""
+    portal_hops: tuple[ProbeHop, ...]
+    """The portal's own login chain, followed with what the chain from Aula left; empty where its host is outside the domains followed."""
+    portal_ended: str
+    """Why the portal's chain ended."""
     scripts: tuple[ProbeScript, ...]
+    """The scripts of the page the portal's chain ended at, on the portal's own site."""
 
     def as_dict(self) -> dict[str, Any]:
         """The report as JSON's types."""
@@ -142,25 +174,75 @@ def _needs_javascript(page: BeautifulSoup) -> bool:
     return bool(page.find("script") or page.find("noscript"))
 
 
-async def follow(
-    session: aiohttp.ClientSession,
-    widget_id: str,
-    url: str,
-    fields: dict[str, str],
-    domains: tuple[str, ...] = TABULEX_DOMAINS,
-    portal: str = TABULEX_PORTAL,
-) -> TabulexProbeReport:
-    """POST `fields` to the widget's `url` as Aula's portal does, follow the login chain, and read the portal.
+_STRING = re.compile(r"""(["'`])((?:\\.|(?!\1).)*)\1""", re.DOTALL)
+_ADDRESS = re.compile(r"""^(?:https?://[^\s"'`<>]+|/[A-Za-z0-9._~%/-]*(?:\?[^\s"'`<>]*)?)$""")
+_RUN = re.compile(r"[A-Za-z0-9+/=_-]{24,}")
+MAX_INLINE = 20_000
+"""The most characters of each of a page's own scripts kept."""
+MAX_INLINES = 20
+"""The most of a page's own scripts kept."""
 
-    The chain is followed through redirects and through forms a page submits by itself, at most
-    MAX_HOPS steps, and only on `domains`; it stops at a host elsewhere, at a page that is no
-    such form, and at an error. Then the page of `portal` is read, without following a
-    redirect, and each script it loads from its own site. Nothing is ever logged but how the
-    steps went.
-    """
+
+def _string(match: re.Match[str]) -> str:
+    quote, text = match.group(1), match.group(2)
+    if _ADDRESS.match(text):
+        address = ProbeAddress.of(text if text.startswith("http") else "relative:" + text)
+        query = "?" + "&".join(address.query_names) if address.query_names else ""
+        host = address.host if text.startswith("http") else ""
+        return f"{quote}{host}{address.path}{query}{quote}"
+    return f"{quote}«{len(text)}»{quote}"
+
+
+def masked(code: str) -> str:
+    """`code` with every string replaced: an address by its host, path and query's names, anything
+    else by its length; and every run of letters and digits long enough to be a token by its
+    length."""
+    return _RUN.sub(lambda run: f"«{len(run.group(0))}»", _STRING.sub(_string, code[:MAX_INLINE]))
+
+
+def _page(page: BeautifulSoup, url: str) -> ProbePage:
+    """How `page`, read at `url`, is built: its forms, the scripts it loads, its own scripts masked, and a meta refresh."""
+    forms = tuple(
+        ProbeForm(
+            ProbeAddress.of(urljoin(url, _attribute(form, "action"))) if _attribute(form, "action") else None,
+            (_attribute(form, "method") or "GET").upper(),
+            tuple(
+                (_attribute(field, "name"), (_attribute(field, "type") or field.name).lower())
+                for field in _tags(form) if field.name in ("input", "select", "textarea", "button")
+            ),
+        )
+        for form in _tags(page, "form")
+    )
+    scripts = _tags(page, "script")
+    loaded = tuple(ProbeAddress.of(urljoin(url, _attribute(script, "src"))) for script in scripts if _attribute(script, "src"))
+    inline = tuple(masked(script.get_text()) for script in scripts if not _attribute(script, "src") and script.get_text().strip())
+    refresh = next((meta for meta in _tags(page, "meta") if _attribute(meta, "http-equiv").lower() == "refresh"), None)
+    target = _attribute(refresh, "content").partition("url=")[2] if refresh is not None else ""
+    return ProbePage(forms, loaded, inline[:MAX_INLINES], ProbeAddress.of(urljoin(url, target.strip("'\" "))) if target else None)
+
+
+@dataclass(frozen=True)
+class _Chain:
+    hops: tuple[ProbeHop, ...]
+    ended: str
+    stopped_at: str | None
+    url: str
+    """The address of the last step."""
+    sources: tuple[str, ...] = ()
+    """The addresses, in full, of the scripts the page that ended the chain loads."""
+
+
+async def _follow(
+    session: aiohttp.ClientSession,
+    url: str,
+    method: str,
+    data: dict[str, str] | None,
+    domains: tuple[str, ...],
+    timeout: aiohttp.ClientTimeout,
+) -> _Chain:
+    """Follow a login chain from `url` through redirects and forms a page submits by itself."""
     hops: list[ProbeHop] = []
-    method, data, ended, stopped_at = "POST", cast(dict[str, str] | None, fields), f"{MAX_HOPS} steps", None
-    timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+    ended, stopped_at = f"{MAX_HOPS} steps", None
     for _ in range(MAX_HOPS):
         address = ProbeAddress.of(url)
         if not allowed(address.host, domains):
@@ -185,42 +267,57 @@ async def follow(
         form = _auto_form(page) if status == HTTPStatus.OK else None
         if form is None:
             needs = status == HTTPStatus.OK and _needs_javascript(page)
-            hops.append(ProbeHop(method, address, status, cookies=cookies, needs_javascript=needs))
-            ended = "a page that needs JavaScript" if needs else f"an answer of HTTP {status} that leads nowhere"
-            break
+            hops.append(ProbeHop(method, address, status, cookies=cookies, needs_javascript=needs, page=_page(page, url) if body else None))
+            ended = "a page that needs JavaScript" if needs else f"an answer of HTTP {status}"
+            sources = tuple(urljoin(url, _attribute(script, "src")) for script in _tags(page, "script") if _attribute(script, "src"))
+            return _Chain(tuple(hops), ended, stopped_at, url, sources)
         inputs = [field for field in _tags(form, "input") if _attribute(field, "name")]
         action = urljoin(url, _attribute(form, "action") or url)
         names = tuple(_attribute(field, "name") for field in inputs)
         hops.append(ProbeHop(method, address, status, form_action=ProbeAddress.of(action), form_fields=names, cookies=cookies))
         url, method = action, (_attribute(form, "method") or "GET").upper()
         data = {_attribute(field, "name"): _attribute(field, "value") for field in inputs}
-    portal_hop: ProbeHop | None = None
+    return _Chain(tuple(hops), ended, stopped_at, url)
+
+
+async def follow(
+    session: aiohttp.ClientSession,
+    widget_id: str,
+    url: str,
+    fields: dict[str, str],
+    domains: tuple[str, ...] = TABULEX_DOMAINS,
+    portal: str = TABULEX_PORTAL,
+) -> TabulexProbeReport:
+    """POST `fields` to the widget's `url` as Aula's portal does, follow the login chain, then the portal's own.
+
+    Each chain is followed through redirects and through forms a page submits by itself, at most
+    MAX_HOPS steps, and only on `domains`; it stops at a host elsewhere, at a page that is no
+    such form, and at an error. The portal's chain starts at `portal` with what the first chain
+    left in `session`; each script of the page it ends at, on the portal's own site, is read.
+    Nothing is ever logged but how the steps went.
+    """
+    timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+    aula = await _follow(session, url, "POST", fields, domains, timeout)
+    portal_chain = _Chain((), "a host outside the domains followed", ProbeAddress.of(portal).host, portal)
     scripts: tuple[ProbeScript, ...] = ()
     if allowed(ProbeAddress.of(portal).host, domains):
-        portal_hop, scripts = await _read_portal(session, portal, timeout)
-    return TabulexProbeReport(widget_id, tuple(hops), ended, stopped_at, portal_hop, scripts)
+        portal_chain = await _follow(session, portal, "GET", None, domains, timeout)
+        if ProbeAddress.of(portal_chain.url).host == ProbeAddress.of(portal).host:
+            scripts = await _read_scripts(session, portal_chain.url, portal_chain.sources, timeout)
+    return TabulexProbeReport(
+        widget_id, aula.hops, aula.ended, aula.stopped_at, portal_chain.hops, portal_chain.ended, scripts
+    )
 
 
-async def _read_portal(
-    session: aiohttp.ClientSession, portal: str, timeout: aiohttp.ClientTimeout
-) -> tuple[ProbeHop, tuple[ProbeScript, ...]]:
-    """The read of the portal's page, and the scripts it loads, read where on its own site."""
-    address = ProbeAddress.of(portal)
-    try:
-        async with session.get(portal, allow_redirects=False, timeout=timeout) as response:
-            status, location = response.status, response.headers.get("Location")
-            cookies = _cookies(response, address.host)
-            body = await response.text(errors="replace") if status == HTTPStatus.OK else ""
-    except (aiohttp.ClientError, TimeoutError) as error:
-        return ProbeHop("GET", address, 0, error=type(error).__name__), ()
-    moved = ProbeAddress.of(urljoin(portal, location)) if location is not None else None
-    page = BeautifulSoup(body, "html.parser")
-    hop = ProbeHop("GET", address, status, location=moved, cookies=cookies, needs_javascript=_needs_javascript(page))
-    sources = [urljoin(portal, _attribute(script, "src")) for script in _tags(page, "script") if _attribute(script, "src")]
+async def _read_scripts(
+    session: aiohttp.ClientSession, url: str, sources: tuple[str, ...], timeout: aiohttp.ClientTimeout
+) -> tuple[ProbeScript, ...]:
+    """The scripts at `sources`, loaded by the page at `url`, read where on its own site."""
+    host = ProbeAddress.of(url).host
     scripts: list[ProbeScript] = []
     for source in list(dict.fromkeys(sources))[:MAX_SCRIPTS]:
         script = ProbeAddress.of(source)
-        if script.host != address.host:
+        if script.host != host:
             scripts.append(ProbeScript(script, 0, None))
             continue
         try:
@@ -229,4 +326,4 @@ async def _read_portal(
                 scripts.append(ProbeScript(script, response.status, text))
         except (aiohttp.ClientError, TimeoutError):
             scripts.append(ProbeScript(script, 0, None))
-    return hop, tuple(scripts)
+    return tuple(scripts)

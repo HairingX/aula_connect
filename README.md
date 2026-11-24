@@ -74,14 +74,16 @@ not send is refused with `ValueError`, before anything is sent.
   thread, as HTML paragraphs, at most 6600 characters. It never marks a thread read.
 - **Probing Tabulex's login.** `probe_tabulex()` follows, once, how IST's Tabulex logs the
   guardian in from Aula, to learn how its parent portal works: it posts the login's Tabulex
-  widget's form as Aula's portal does on a desktop, with a new widget token, follows redirects
-  and the forms a page submits by itself, at most 15 steps and only on hosts under `ist.dk`,
-  `tabulex.dk` and `tabulex.net`, then reads the portal's page and the scripts it loads from its
-  own site. It posts nothing else. Its report, kept as `tabulex_probe`, tells each step's
-  method, host, path, the names of its query and form fields, its status, where it redirected,
-  the names and domains of the cookies set, and whether a page seemed to need JavaScript, and the
-  full text of the portal's own scripts; never a value of a token, cookie or field, nor any text
-  of a page.
+  widget's form as Aula's portal does on a desktop, with a new widget token, and follows
+  redirects and the forms a page submits by itself, at most 15 steps and only on hosts under
+  `ist.dk`, `tabulex.dk` and `tabulex.net`; then it follows the portal's own login the same way,
+  with what the first chain left, and reads the scripts of the portal's page it ends at, from
+  the portal's own site. It posts nothing else. Its report, kept as `tabulex_probe`, tells each
+  step's method, host, path, the names of its query and form fields, its status, where it
+  redirected, the names and domains of the cookies set, and of a page that ends a chain: its
+  forms' fields by name and type, the scripts it loads, its own code with every string masked
+  but an address's host and path, and a meta refresh; and the full text of the portal's own
+  scripts. Never a value of a token, cookie or field, nor any text of a page.
 - **The child's picture.** `get_profile_picture(child)` reads the child's profile picture anew:
   its `url` expires within about an hour.
 

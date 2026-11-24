@@ -17,7 +17,19 @@ from bs4 import BeautifulSoup
 from aula_connect import AulaClient, AulaLoginClient
 from aula_connect.api.aula_errors import NoTabulexWidgetError
 from aula_connect.api.models.aula_parser import now
-from aula_connect.tabulex_probe import MAX_HOPS, ProbeAddress, ProbeCookie, TabulexProbeReport, _auto_form, allowed, follow
+from aula_connect.tabulex_probe import (
+    MAX_HOPS,
+    ProbeAddress,
+    ProbeCookie,
+    ProbeForm,
+    ProbePage,
+    TabulexProbeReport,
+    _auto_form,
+    _page,
+    allowed,
+    follow,
+    masked,
+)
 from aula_connect.testing import SimulatedAulaApi, SimulatedTabulex
 
 IDP, PORTAL, ELSEWHERE = SimulatedTabulex.IDP, SimulatedTabulex.PORTAL, SimulatedTabulex.ELSEWHERE
@@ -92,7 +104,10 @@ def test_the_probe_follows_the_chain_posts_the_portals_form_and_reads_the_portal
     assert (post.method, post.status, post.location, post.cookies) == ("POST", 302, ProbeAddress(PORTAL, "/", ()), (ProbeCookie("FedAuth", PORTAL),))
     assert (page.method, page.status, page.needs_javascript) == ("GET", 200, True)
     assert (report.ended, report.stopped_at) == ("a page that needs JavaScript", None)
-    assert report.portal is not None and (report.portal.status, report.portal.needs_javascript) == (200, True)
+    [portal] = report.portal_hops
+    assert (portal.method, portal.address, portal.status, portal.needs_javascript) == ("GET", ProbeAddress(PORTAL, "/", ()), 200, True)
+    assert portal.page is not None and portal.page.inline == ("var signedIn = true;",)
+    assert report.portal_ended == "a page that needs JavaScript"
     assert [(script.address.host, script.address.path, script.address.query_names, script.status, script.text) for script in report.scripts] == [
         (PORTAL, "/scripts/app.js", ("v",), 200, SimulatedTabulex.SCRIPT),
         (PORTAL, "/scripts/gone.js", (), 404, None),
@@ -118,8 +133,8 @@ def test_a_host_outside_ists_and_tabulexs_stops_the_chain_unasked() -> None:
     assert (report.ended, report.stopped_at) == ("a host outside the domains followed", ELSEWHERE)
     assert report.hops[-1].location == ProbeAddress(ELSEWHERE, "/login", ("SAMLRequest",))
     assert not [request for request in tabulex.requests if request.startswith(ELSEWHERE)]
-    assert report.portal is not None and report.portal.status == 302 and report.portal.location is not None
-    assert (report.portal.location.host, report.scripts) == (IDP, ())
+    assert [hop.address.host for hop in report.portal_hops] == [PORTAL, IDP]
+    assert (report.portal_ended, report.scripts) == ("a host outside the domains followed", ())
 
 
 def test_a_page_that_needs_javascript_ends_the_chain_and_is_reported() -> None:
@@ -146,7 +161,7 @@ def test_an_answer_that_leads_nowhere_ends_the_chain() -> None:
 
     report, _, tabulex, _ = _probe(arrange)
     [hop] = report.hops
-    assert (hop.status, hop.needs_javascript, report.ended) == (400, False, "an answer of HTTP 400 that leads nowhere")
+    assert (hop.status, hop.needs_javascript, report.ended) == (400, False, "an answer of HTTP 400")
     assert tabulex.forms == []
 
 
@@ -161,8 +176,8 @@ def test_a_network_error_ends_the_chain_and_the_read_of_the_portal_with_its_kind
     report, _, _, _ = _probe(arrange)
     [hop] = report.hops
     assert (hop.status, hop.error, report.ended) == (0, "ClientConnectorError", "an error")
-    portal = asyncio.run(unreachable_portal()).portal
-    assert portal is not None and (portal.status, portal.error) == (0, "ClientConnectorError")
+    [portal] = asyncio.run(unreachable_portal()).portal_hops
+    assert (portal.status, portal.error) == (0, "ClientConnectorError")
 
 
 @pytest.mark.parametrize("widget", [None, {"type": "normal"}], ids=["no widget", "not a sign-in"])
@@ -190,7 +205,9 @@ def test_a_user_context_aula_tells_nothing_of_is_refused() -> None:
 
 def test_without_a_session_the_probe_has_its_own_and_never_leaves_the_domains_followed() -> None:
     report, _, tabulex, _ = _probe(own_session=True)
-    assert (report.hops, report.stopped_at, report.portal, report.scripts) == ((), IDP, None, ())
+    assert (report.hops, report.stopped_at, report.portal_hops, report.portal_ended, report.scripts) == (
+        (), IDP, (), "a host outside the domains followed", ()
+    )
     assert tabulex.requests == []
 
 
@@ -222,3 +239,48 @@ def test_only_ists_and_tabulexs_hosts_are_followed(host: str, expected: bool) ->
 def test_a_page_that_submits_a_form_with_a_field_to_fill_is_no_form_it_submits_by_itself() -> None:
     page = BeautifulSoup('<form><input type="text" name="user"/></form><script>document.forms[0].submit()</script>', "html.parser")
     assert _auto_form(page) is None
+
+
+def test_a_page_is_told_by_its_forms_scripts_masked_code_and_refresh_never_its_values_or_text() -> None:
+    page = BeautifulSoup(
+        '<meta http-equiv="refresh" content="0; url=\'/next?AuthState=secret-state\'">'
+        '<form action="/simplesaml/login.php?AuthState=secret-state" method="post"><input type="hidden" name="AuthState" value="secret-state"/>'
+        '<input name="user"/><select name="child"><option>Alma</option></select><button type="submit">Videre</button></form>'
+        '<script src="/js/login.js?v=1"></script>'
+        '<script>var token = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2"; window.location = "https://foraeldre.tabulex.net/#/fravaer?x=secret";</script>'
+        "<p>Velkommen Alma</p>",
+        "html.parser",
+    )
+    told = _page(page, "https://borger-aula-login.tabulex.dk/simplesaml/module.php/tabulexaulalogin/login.php?AuthState=secret-state")
+    host = "borger-aula-login.tabulex.dk"
+    assert told == ProbePage(
+        (
+            ProbeForm(
+                ProbeAddress(host, "/simplesaml/login.php", ("AuthState",)),
+                "POST",
+                (("AuthState", "hidden"), ("user", "input"), ("child", "select"), ("", "submit")),
+            ),
+        ),
+        (ProbeAddress(host, "/js/login.js", ("v",)),),
+        ('var token = "«28»"; window.location = "foraeldre.tabulex.net/";',),
+        ProbeAddress(host, "/next", ("AuthState",)),
+    )
+    assert "secret" not in repr(told) and "Alma" not in repr(told)
+
+
+def test_a_page_without_forms_scripts_or_refresh_is_told_empty() -> None:
+    assert _page(BeautifulSoup("<p>Hej</p><script> </script>", "html.parser"), "https://x.tabulex.dk/") == ProbePage()
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("f('/api/fravaer?child=7713')", "f('/api/fravaer?child')"),
+        ("f(`${a}`)", "f(`«4»`)"),
+        ('x = "say \\"hi\\""', 'x = "«10»"'),
+        ("id = abcdefghijklmnopqrstuvwxyz0123", "id = «30»"),
+        ("http('https://api.ist.dk/v1/sick')", "http('api.ist.dk/v1/sick')"),
+    ],
+)
+def test_code_is_masked_but_for_its_addresses_hosts_and_paths(code: str, expected: str) -> None:
+    assert masked(code) == expected
