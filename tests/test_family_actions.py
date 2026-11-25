@@ -99,7 +99,7 @@ def test_a_child_aulas_presence_module_lets_the_guardian_report_sick_is_reported
     async def act(client: AulaClient, child: AulaChildProfile) -> Any:
         [configuration] = await client.get_presence_configurations([child])
         route = await client.get_sick_report_route(child)
-        await client.report_sick(child)
+        assert await client.report_sick(child) is AulaSickReportRoute.AULA
         [sick] = await client.get_daily_overviews((await client.login()).profiles)
         await client.undo_sick(child)
         [well] = await client.get_daily_overviews((await client.login()).profiles)

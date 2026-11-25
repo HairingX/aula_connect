@@ -417,8 +417,8 @@ class AulaClient:
         await self._ensure_valid_token()
         return await self._proxy.get_sick_report_route(child)
 
-    async def report_sick(self, child: AulaChildProfile) -> None:
-        """Report the child sick today, along its route, once.
+    async def report_sick(self, child: AulaChildProfile) -> AulaSickReportRoute:
+        """Report the child sick today, along its route, once; the route it was reported along.
 
         Through Aula's presence module, see `AulaProxyClient.report_sick`; or through IST's
         Tabulex, the child found there by its name, where the report cannot be taken back.
@@ -436,8 +436,9 @@ class AulaClient:
                 if found is None:
                     raise TabulexError("Tabulex knows no child of that name")
                 await tabulex.report_sick_today(found)
-            return
+            return AulaSickReportRoute.TABULEX
         await self._proxy.report_sick(child)
+        return AulaSickReportRoute.AULA
 
     async def undo_sick(self, child: AulaChildProfile) -> None:
         """Take back today's report that the child is sick; see `AulaProxyClient.undo_sick`.

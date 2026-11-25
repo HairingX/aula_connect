@@ -15,6 +15,7 @@ import pytest
 
 from aula_connect import AulaClient, AulaLoginClient
 from aula_connect.api.aula_errors import NoSickReportRouteError, SickReportFinalError
+from aula_connect.api.models.aula_presence_models import AulaSickReportRoute
 from aula_connect.api.models.aula_profile_models import AulaChildProfile
 from aula_connect.tabulex import (
     TabulexChild,
@@ -69,13 +70,13 @@ def _run(act: Act, arrange: Arrange = _tabulex_route) -> tuple[Any, SimulatedAul
     return asyncio.run(run())
 
 
-async def _report(client: AulaClient, child: AulaChildProfile, tabulex: SimulatedTabulex) -> None:
-    await client.report_sick(child)
+async def _report(client: AulaClient, child: AulaChildProfile, tabulex: SimulatedTabulex) -> AulaSickReportRoute:
+    return await client.report_sick(child)
 
 
 def test_a_child_whose_route_is_tabulex_is_reported_sick_there_once_by_its_cpr() -> None:
     result, aula, tabulex, _ = _run(_report)
-    assert result is None and tabulex.sick_reports == [CPR]
+    assert result is AulaSickReportRoute.TABULEX and tabulex.sick_reports == [CPR]
     assert "presence.updateStatusByInstitutionProfileIds" not in aula.requests
 
 
