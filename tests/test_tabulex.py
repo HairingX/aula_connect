@@ -282,9 +282,19 @@ def test_checking_a_sick_report_through_tabulex_finds_the_child_and_sends_nothin
         tabulex.sick_today.add(CPR)
 
     check, aula, tabulex, _ = _run(_check, arrange)
-    assert check == AulaSickReportCheck(AulaSickReportRoute.TABULEX, True, True, "PUT /api/Fravaer/MeldSygIdag/")
+    assert check == AulaSickReportCheck(AulaSickReportRoute.TABULEX, True, True, "PUT /api/Fravaer/MeldSygIdag/", False)
     assert tabulex.sick_reports == [] and [request for request in tabulex.requests if not request.startswith(("GET ", "POST "))] == []
     assert "presence.updateStatusByInstitutionProfileIds" not in aula.requests
+
+
+@pytest.mark.parametrize(("code", "same"), [("S1", True), (None, None)])
+def test_checking_tells_whether_tabulex_has_the_child_at_the_institution_aula_has_it_at(code: str | None, same: bool | None) -> None:
+    def arrange(aula: SimulatedAulaApi, tabulex: SimulatedTabulex) -> None:
+        _tabulex_route(aula, tabulex)
+        tabulex.children = [{**tabulex.children[0], "SkoleKode": code}]
+
+    check, _, _, _ = _run(_check, arrange)
+    assert (check.found, check.same_institution) == (True, same)
 
 
 def test_checking_a_child_tabulex_does_not_know_says_it_would_send_nothing() -> None:
@@ -304,7 +314,7 @@ def test_checking_a_sick_report_in_aula_reads_the_childs_presence_and_sends_noth
             aula.daily_overviews = [{"id": 1, "institutionProfile": {"id": 11, "institutionCode": "S1", "institutionName": "School"}, "status": status}]
 
     check, aula, tabulex, _ = _run(_check, arrange)
-    assert check == AulaSickReportCheck(AulaSickReportRoute.AULA, True, sick, "POST presence.updateStatusByInstitutionProfileIds")
+    assert check == AulaSickReportCheck(AulaSickReportRoute.AULA, True, sick, "POST presence.updateStatusByInstitutionProfileIds", True)
     assert "presence.updateStatusByInstitutionProfileIds" not in aula.requests and tabulex.requests == []
 
 

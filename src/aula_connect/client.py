@@ -470,11 +470,12 @@ class AulaClient:
                 found = match(child, await tabulex.children())
                 day = None if found is None else await tabulex.today(found)
             request = None if found is None else "PUT /api/Fravaer/MeldSygIdag/"
-            return AulaSickReportCheck(route, found is not None, None if day is None else day.sick, request)
+            same = None if found is None or found.school_code is None else found.school_code == child.institution_code
+            return AulaSickReportCheck(route, found is not None, None if day is None else day.sick, request, same)
         if route is AulaSickReportRoute.AULA:
             overview = await self._proxy.get_child_overview(child)
             sick = None if overview is None else overview.status == AulaPresenceStatus.SICK
-            return AulaSickReportCheck(route, True, sick, "POST presence.updateStatusByInstitutionProfileIds")
+            return AulaSickReportCheck(route, True, sick, "POST presence.updateStatusByInstitutionProfileIds", True)
         return AulaSickReportCheck(route, False, None, None)
 
     def use_tabulex(

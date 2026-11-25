@@ -75,3 +75,7 @@ class AulaSickReportCheck:
     """Whether it is reported sick there today already; None where that cannot be told."""
     request: str | None
     """The request a report would send, by its method and endpoint; None where none would be sent."""
+    same_institution: bool | None = None
+    """Whether the child is found there at the institution Aula has it at: by Aula itself always,
+    in Tabulex where the school code Tabulex gives is Aula's institution code; None where no
+    child is found, or Tabulex gives no school code."""

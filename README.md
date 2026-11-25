@@ -62,7 +62,8 @@ not send is refused with `ValueError`, before anything is sent.
 
   `check_sick_report(child)` tells what a report would do without sending anything: the route,
   whether the child is found there (in Tabulex, by its name), whether it is reported sick there
-  today already, and the request a report would send.
+  today already, the request a report would send, and whether the child is found there at the
+  institution Aula has it at (in Tabulex, where its school code is Aula's institution code).
 
   Telling the school is a message to the teachers, a separate step.
 - **IST's Tabulex.** `async with client.tabulex() as tabulex:` logs in to Tabulex's parent
