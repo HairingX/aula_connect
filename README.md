@@ -60,6 +60,10 @@ not send is refused with `ValueError`, before anything is sent.
     `SickReportFinalError`.
   - `NONE`: otherwise. Reporting sick raises `NoSickReportRouteError`.
 
+  `check_sick_report(child)` tells what a report would do without sending anything: the route,
+  whether the child is found there (in Tabulex, by its name), whether it is reported sick there
+  today already, and the request a report would send.
+
   Telling the school is a message to the teachers, a separate step.
 - **IST's Tabulex.** `async with client.tabulex() as tabulex:` logs in to Tabulex's parent
   portal through the login's widget, with a new widget token, on a session of its own, closed

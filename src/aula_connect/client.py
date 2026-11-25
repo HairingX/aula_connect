@@ -20,6 +20,8 @@ from .api.module import (
     AulaBirthdayEvent,
     AulaPresenceConfiguration,
     AulaProfilePicture,
+    AulaPresenceStatus,
+    AulaSickReportCheck,
     AulaSickReportRoute,
     AulaVacation,
     AulaVacationDay,
@@ -451,6 +453,29 @@ class AulaClient:
         if await self._proxy.get_sick_report_route(child) is AulaSickReportRoute.TABULEX:
             raise SickReportFinalError("IST Tabulex")
         await self._proxy.undo_sick(child)
+
+    async def check_sick_report(self, child: AulaChildProfile) -> AulaSickReportCheck:
+        """What reporting the child sick would do, found without sending anything.
+
+        Along Aula's presence module, the child's presence today is read; through IST's Tabulex,
+        the portal is logged in to, the child looked for by its name, and its absence today read.
+
+        Raises:
+            TabulexError: Tabulex could not be logged in to, or refused or failed a read.
+        """
+        await self._ensure_valid_token()
+        route = await self._proxy.get_sick_report_route(child)
+        if route is AulaSickReportRoute.TABULEX:
+            async with self.tabulex() as tabulex:
+                found = match(child, await tabulex.children())
+                day = None if found is None else await tabulex.today(found)
+            request = None if found is None else "PUT /api/Fravaer/MeldSygIdag/"
+            return AulaSickReportCheck(route, found is not None, None if day is None else day.sick, request)
+        if route is AulaSickReportRoute.AULA:
+            overview = await self._proxy.get_child_overview(child)
+            sick = None if overview is None else overview.status == AulaPresenceStatus.SICK
+            return AulaSickReportCheck(route, True, sick, "POST presence.updateStatusByInstitutionProfileIds")
+        return AulaSickReportCheck(route, False, None, None)
 
     def use_tabulex(
         self, portal: str, session: Callable[[], aiohttp.ClientSession], not_followed: Sequence[str] = NOT_FOLLOWED

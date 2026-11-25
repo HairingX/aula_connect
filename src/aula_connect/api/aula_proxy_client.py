@@ -811,13 +811,18 @@ class AulaProxyClient:
             SickReportRouteNotSupportedError: The child is reported sick through Tabulex.
             NoSickReportRouteError: No way is known to report the child sick.
         """
+        overview = await self.get_child_overview(child)
+        if overview is None or overview.status != AulaPresenceStatus.SICK:
+            raise ValueError("The child is not reported sick today")
+        await self._update_sick_status(child, AulaPresenceStatus.NOT_PRESENT)
+
+    async def get_child_overview(self, child: AulaChildProfile) -> AulaDailyOverview | None:
+        """Today's presence of the child; None where Aula tells none."""
         overviews = await self._get(
             "presence.getDailyOverview", "daily overviews", self._child_ids([child]),
             AulaProfileParser.parse_daily_overview_response, [],
         )
-        if not any(overview.institution_profile.id == child.id and overview.status == AulaPresenceStatus.SICK for overview in overviews):
-            raise ValueError("The child is not reported sick today")
-        await self._update_sick_status(child, AulaPresenceStatus.NOT_PRESENT)
+        return next((overview for overview in overviews if overview.institution_profile.id == child.id), None)
 
     async def _update_sick_status(self, child: AulaChildProfile, status: AulaPresenceStatus) -> None:
         route = await self.get_sick_report_route(child)

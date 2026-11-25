@@ -15,7 +15,7 @@ import pytest
 
 from aula_connect import AulaClient, AulaLoginClient
 from aula_connect.api.aula_errors import NoSickReportRouteError, SickReportFinalError
-from aula_connect.api.models.aula_presence_models import AulaSickReportRoute
+from aula_connect.api.models.aula_presence_models import AulaSickReportCheck, AulaSickReportRoute
 from aula_connect.api.models.aula_profile_models import AulaChildProfile
 from aula_connect.tabulex import (
     TabulexChild,
@@ -270,3 +270,47 @@ def test_a_day_or_school_days_tabulex_sends_otherwise_are_read_as_none() -> None
     days = [{"Dato": "2026-11-24T00:00:00", "SkoleDag": True}, {"Dato": "not a date"}, {"Dato": None}, "x", {"Dato": "2026-11-25", "SkoleDag": "ja"}]
     assert parse_school_days(days) == [TabulexSchoolDay(datetime.date(2026, 11, 24), True), TabulexSchoolDay(datetime.date(2026, 11, 25), False)]
     assert parse_school_days({"Dato": "2026-11-24"}) == []
+
+
+async def _check(client: AulaClient, child: AulaChildProfile, tabulex: SimulatedTabulex) -> AulaSickReportCheck:
+    return await client.check_sick_report(child)
+
+
+def test_checking_a_sick_report_through_tabulex_finds_the_child_and_sends_nothing() -> None:
+    def arrange(aula: SimulatedAulaApi, tabulex: SimulatedTabulex) -> None:
+        _tabulex_route(aula, tabulex)
+        tabulex.sick_today.add(CPR)
+
+    check, aula, tabulex, _ = _run(_check, arrange)
+    assert check == AulaSickReportCheck(AulaSickReportRoute.TABULEX, True, True, "PUT /api/Fravaer/MeldSygIdag/")
+    assert tabulex.sick_reports == [] and [request for request in tabulex.requests if not request.startswith(("GET ", "POST "))] == []
+    assert "presence.updateStatusByInstitutionProfileIds" not in aula.requests
+
+
+def test_checking_a_child_tabulex_does_not_know_says_it_would_send_nothing() -> None:
+    def arrange(aula: SimulatedAulaApi, tabulex: SimulatedTabulex) -> None:
+        _tabulex_route(aula, tabulex)
+        tabulex.children = [{**tabulex.children[0], "Fornavn": "Bo"}]
+
+    check, _, _, _ = _run(_check, arrange)
+    assert check == AulaSickReportCheck(AulaSickReportRoute.TABULEX, False, None, None)
+
+
+@pytest.mark.parametrize(("status", "sick"), [(1, True), (0, False), (None, None)])
+def test_checking_a_sick_report_in_aula_reads_the_childs_presence_and_sends_nothing(status: int | None, sick: bool | None) -> None:
+    def arrange(aula: SimulatedAulaApi, tabulex: SimulatedTabulex) -> None:
+        aula.presence_modules = {"report_sick": "editable"}
+        if status is not None:
+            aula.daily_overviews = [{"id": 1, "institutionProfile": {"id": 11, "institutionCode": "S1", "institutionName": "School"}, "status": status}]
+
+    check, aula, tabulex, _ = _run(_check, arrange)
+    assert check == AulaSickReportCheck(AulaSickReportRoute.AULA, True, sick, "POST presence.updateStatusByInstitutionProfileIds")
+    assert "presence.updateStatusByInstitutionProfileIds" not in aula.requests and tabulex.requests == []
+
+
+def test_checking_a_child_with_no_route_says_it_would_send_nothing() -> None:
+    def arrange(aula: SimulatedAulaApi, tabulex: SimulatedTabulex) -> None:
+        aula.presence_modules = {}
+
+    check, _, _, _ = _run(_check, arrange)
+    assert check == AulaSickReportCheck(AulaSickReportRoute.NONE, False, None, None)

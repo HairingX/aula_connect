@@ -57,6 +57,7 @@ from .aula_presence_models import (
     AulaPresenceModuleType,
     AulaPresencePermission,
     AulaPresenceStatus,
+    AulaSickReportCheck,
     AulaSickReportRoute,
 )
 from .aula_vacation_models import (
@@ -150,6 +151,7 @@ __all__ = [
     'AulaPresenceModuleType',
     'AulaPresencePermission',
     'AulaPresenceStatus',
+    'AulaSickReportCheck',
     'AulaSickReportRoute',
     #vacation
     'AulaVacation',

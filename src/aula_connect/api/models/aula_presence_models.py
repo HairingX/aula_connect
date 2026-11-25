@@ -63,3 +63,15 @@ class AulaSickReportRoute(StrEnum):
     """IST's Tabulex, through its widget in Aula."""
     NONE = "none"
     """Nowhere this library knows of."""
+
+
+@dataclass(frozen=True)
+class AulaSickReportCheck:
+    """What reporting a child sick would do, found without sending anything."""
+    route: AulaSickReportRoute
+    found: bool
+    """Whether the child is found where it would be reported: in Aula always, in Tabulex by its name."""
+    sick_today: bool | None
+    """Whether it is reported sick there today already; None where that cannot be told."""
+    request: str | None
+    """The request a report would send, by its method and endpoint; None where none would be sent."""
