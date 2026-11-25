@@ -22,10 +22,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any, cast
-from urllib.parse import parse_qsl, urljoin, urlsplit
+from urllib.parse import parse_qsl, unquote, urljoin, urlsplit
 
 import aiohttp
 from bs4 import BeautifulSoup, Tag
+from yarl import URL
 
 from .pseudonym import Pseudonymiser, shapes
 
@@ -219,6 +220,19 @@ class WidgetProbeReport:
         return dataclasses.asdict(self)
 
 
+def app_headers(session: aiohttp.ClientSession, host: str) -> dict[str, str]:
+    """The headers an app's own request to `host` carries.
+
+    As AngularJS's `$http` does, the cookie XSRF-TOKEN a site set is sent back as the header
+    X-XSRF-TOKEN, decoded; a site such as Tabulex's portal refuses a request without it.
+    """
+    headers = {"Accept": "application/json, text/plain, */*", "X-Requested-With": "XMLHttpRequest"}
+    for cookie in session.cookie_jar.filter_cookies(URL.build(scheme="https", host=host)).values():
+        if cookie.key == "XSRF-TOKEN":
+            headers["X-XSRF-TOKEN"] = unquote(cookie.value)
+    return headers
+
+
 def probe_session(connector: aiohttp.BaseConnector | None = None) -> aiohttp.ClientSession:
     """A session for the probe, with cookies of its own, sent back as they were set.
 
@@ -375,9 +389,18 @@ _PLACEHOLDER = re.compile(r"\{(\w+)\}|(?<=/):(\w+)")
 _FIRST = ("api", "service", "rest", "odata", "handler", ".ashx", ".asmx", ".svc", "json", "data")
 
 
+_JOINED = re.compile(r"""(["'`])(/?(?:[A-Za-z0-9_.~-]+/)+)\1\s*\+\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)""")
+
+
 def found_in(code: str) -> list[str]:
-    """The addresses `code` names: strings with a path, not a media type nor an asset, a query's values left out."""
+    """The addresses `code` names: strings with a path, not a media type nor an asset, a query's values left out.
+
+    A path ending in a slash that the code joins a value to, as in `'/api/children/' + child.Cpr`,
+    is named too with that value's last name as its placeholder: `/api/children/{Cpr}`.
+    """
     found: dict[str, None] = {}
+    for match in _JOINED.finditer(code):
+        found[f"{match.group(2)}{{{match.group(3).rsplit('.', 1)[-1]}}}"] = None
     for match in _FOUND.finditer(code):
         text = match.group(1)
         path = urlsplit(text).path if text.startswith("http") else text.partition("?")[0]
@@ -567,6 +590,18 @@ async def _follow(
     return _Chain(tuple(hops), f"{MAX_HOPS} steps", None, url)
 
 
+async def log_in(
+    session: aiohttp.ClientSession, url: str, fields: dict[str, str], not_followed: Sequence[str] = NOT_FOLLOWED
+) -> tuple[str, str]:
+    """POST `fields` to `url` and follow the login chain as the probe does; where it ended, and why.
+
+    Nothing is told of the chain but the address it ended at and the reason, as the probe tells
+    it, such as "a page a browser stays on".
+    """
+    chain = await _follow(session, url, "POST", fields, _Hosts(not_followed), aiohttp.ClientTimeout(total=REQUEST_TIMEOUT))
+    return chain.url, chain.ended
+
+
 class _Room:
     """How many characters of text may still be kept."""
 
@@ -619,7 +654,7 @@ async def _read(
     address = ProbeAddress.of(shown)
     if urlsplit(url).scheme not in ("http", "https") or not hosts.reach(ProbeAddress.of(url).host):
         return ProbeRead(asked, found, None, 0, error="on no site the chain reached")
-    headers = {"Accept": "application/json, text/plain, */*", "X-Requested-With": "XMLHttpRequest"}
+    headers = app_headers(session, ProbeAddress.of(url).host)
     if bearer:
         headers["Authorization"] = f"Bearer {bearer[0]}"
     try:

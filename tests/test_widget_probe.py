@@ -138,6 +138,7 @@ def test_the_probe_follows_the_whole_login_as_a_browser_does_and_reads_the_porta
     ]
     assert widget.cookies == (
         ProbeCookie("FedAuth", PORTAL),
+        ProbeCookie("XSRF-TOKEN", PORTAL),
         ProbeCookie("SimpleSAMLCitizenAuthToken", "tabulex.test"),
         ProbeCookie("SimpleSAMLCitizenSessionID", "tabulex.test"),
     )
@@ -149,6 +150,7 @@ def test_the_addresses_the_services_code_names_are_read_but_those_that_change_an
     widget = _tabulex(report)
     api = tabulex.cdn_script.split('"')[1].removesuffix("/v1/token")
     assert widget.candidates == (
+        "/api/Fravaer/Idag/{Cpr}",
         "/api/children",
         "api/children/{childId}/absence",
         "/api/fravaer/meldSyg",
@@ -158,20 +160,28 @@ def test_the_addresses_the_services_code_names_are_read_but_those_that_change_an
         "scripts/chunk.js",
         "https://cdn.elsewhere.test/x/y",
         "api/{unknown}/x",
+        "/api/PersonsAdgangTilBoern",
+        "/api/Fravaer/Idag/",
         f"{api}/v1/token",
         f"{api}/v1/children",
     )
     assert [(read.asked, read.found, read.status) for read in widget.reads] == [
         ("/api/children", "code", 200),
         ("/api/settings?from", "code", 200),
+        ("/api/PersonsAdgangTilBoern", "code", 200),
+        ("/api/Fravaer/Idag/", "code", 404),
         (f"{api}/v1/token", "code", 200),
         (f"{api}/v1/children", "code", 200),
         ("views/fravaer.html", "code", 200),
         ("scripts/chunk.js", "code", 200),
         ("https://cdn.elsewhere.test/x/y", "code", 0),
+        ("/api/Fravaer/Idag/«Cpr»", "filled", 200),
         ("api/children/«childId»/absence", "filled", 200),
     ]
-    children, settings, token, api_children, view, chunk, cdn, absence = widget.reads
+    children, settings, persons, _, token, api_children, view, chunk, cdn, today, absence = widget.reads
+    [person] = persons.answer
+    assert persons.status == 200 and person["Cpr"] != tabulex.children[0]["Cpr"] and len(person["Cpr"]) == 10
+    assert today.address == ProbeAddress(PORTAL, "/api/Fravaer/Idag/«Cpr»", ()) and today.shape is not None
     assert token.shape == {".": ["object"], "access_token": ["str"], "expires_in": ["int"]}
     assert token.answer["access_token"] == "x" * len(tabulex.api_token)
     assert api_children.address == ProbeAddress(T.API, "/v1/children", ()) and api_children.shape is not None
@@ -238,7 +248,7 @@ def test_once_a_widgets_time_runs_out_no_more_is_read_and_what_was_not_is_counte
     monkeypatch.setattr("aula_connect.widget_probe.MAX_SECONDS", -1)
     widget = _tabulex(_probe(reads=("/api/text",))[0])
     assert (widget.ended, widget.reads) == ("a page a browser stays on", ())
-    assert widget.skipped == 7 + 1
+    assert widget.skipped == 9 + 1
 
 
 def test_a_widget_whose_token_aula_refuses_is_left_out() -> None:
@@ -392,7 +402,7 @@ def test_the_report_and_the_log_tell_no_token_cookie_assertion_field_or_name(cap
     report, aula, tabulex, _ = _probe(reads=("/api/text",))
     text = json.dumps(report.as_dict(), ensure_ascii=False)
     told = [*aula.widget_tokens, tabulex.assertion, tabulex.state, tabulex.sp_session, tabulex.login_token, tabulex.signed_in, tabulex.portal_session]
-    told += [tabulex.api_token, "made-up-app", "guardian-4821", "child-7713", "Alma", "7713"]
+    told += [tabulex.api_token, tabulex.xsrf, str(tabulex.children[0]["Cpr"]), "made-up-app", "guardian-4821", "child-7713", "Alma", "7713"]
     assert [secret for secret in told if secret in text or secret in caplog.text] == []
     assert SimulatedTabulex.SCRIPT in [script["text"] for widget in json.loads(text)["widgets"] for script in widget["scripts"]]
 

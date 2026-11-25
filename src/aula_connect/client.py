@@ -1,6 +1,7 @@
 """Aula read with tokens that are kept fresh: the API client and the login client together."""
 
-from collections.abc import Awaitable, Collection, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Collection, Sequence
+from contextlib import asynccontextmanager
 from functools import partial
 from typing import Any, Callable, List
 import asyncio
@@ -40,12 +41,13 @@ from .api.module import (
     AULA_NOTIFICATION_TYPES,
 )
 from .anomaly import Anomaly
-from .api.aula_errors import AulaCredentialError, MethodRefusedError
+from .api.aula_errors import AulaCredentialError, MethodRefusedError, NoSickReportRouteError, SickReportFinalError
 from .methods import Kind, alike, known
 from .pseudonym import pseudonymised, shapes
 from .login import AulaLoginClient
 from .redact import redact
 from .login.exceptions import NetworkError, TokenExpiredError
+from .tabulex import PORTAL as TABULEX_PORTAL, TabulexClient, TabulexError, match
 from .widget_probe import NOT_FOLLOWED, WidgetProbe, WidgetProbeReport, probe, probe_session
 
 _LOGGER = logging.getLogger(__name__)
@@ -99,6 +101,10 @@ class AulaClient:
         self._proxy = AulaProxyClient(session, access_token)
         self._proxy.set_token_refresh_callback(self._force_refresh_access_token)
         self._widget_probe: WidgetProbeReport | None = None
+        self._tabulex_portal = TABULEX_PORTAL
+        self._tabulex_session: Callable[[], aiohttp.ClientSession] = probe_session
+        self._tabulex_not_followed: tuple[str, ...] = NOT_FOLLOWED
+        self._tabulex_secrets: set[str] = set()
 
     @property
     def api(self) -> AulaProxyClient:
@@ -268,6 +274,8 @@ class AulaClient:
             await read("EasyIQ weekly plans", partial(self.get_easyiq_weekly_plans, children, start, end))
         if self.has_widget(AulaWidgetId.MY_EDUCATION_WEEKLETTER):
             await read("newsletters", partial(self.get_newsletters, children, start, end))
+        if self._proxy.has_tabulex():
+            await read("Tabulex", self._read_tabulex)
         return failed
 
     def anomalies(self, since: datetime.datetime | None = None) -> tuple[Anomaly, ...]:
@@ -310,7 +318,7 @@ class AulaClient:
         await self._proxy.custom_api_call(
             f"?{urlencode({**params, 'method': method})}", None if body is None else json.dumps(body)
         )
-        secrets = [self._mitid_username, self._access_token, self._refresh_token, *self._proxy.secrets()]
+        secrets = [self._mitid_username, self._access_token, self._refresh_token, *self._proxy.secrets(), *self._tabulex_secrets]
         answers = pseudonymised(self._proxy.recorder.exchanges(), key, secrets, reveal)
         return [answer for answer in answers if answer["endpoint"] == method][-1]
 
@@ -321,7 +329,7 @@ class AulaClient:
         The MitID username and every token the client holds are hidden wherever they are. The
         answers are listed with Aula's API version and the type at each place of each kind.
         """
-        secrets = [self._mitid_username, self._access_token, self._refresh_token, *self._proxy.secrets()]
+        secrets = [self._mitid_username, self._access_token, self._refresh_token, *self._proxy.secrets(), *self._tabulex_secrets]
         exchanges = pseudonymised(self._proxy.recorder.exchanges(), key, secrets)
         kinds: dict[str, dict[str, set[str]]] = {}
         for exchange in exchanges:
@@ -410,14 +418,74 @@ class AulaClient:
         return await self._proxy.get_sick_report_route(child)
 
     async def report_sick(self, child: AulaChildProfile) -> None:
-        """Report the child sick today; see `AulaProxyClient.report_sick`."""
+        """Report the child sick today, along its route, once.
+
+        Through Aula's presence module, see `AulaProxyClient.report_sick`; or through IST's
+        Tabulex, the child found there by its name, where the report cannot be taken back.
+
+        Raises:
+            NoSickReportRouteError: No way is known to report the child sick.
+            TabulexError: Tabulex could not be logged in to, knows no child of the name, or
+                refused or failed the report; where no answer came, it may or may not have
+                registered it.
+        """
         await self._ensure_valid_token()
+        if await self._proxy.get_sick_report_route(child) is AulaSickReportRoute.TABULEX:
+            async with self.tabulex() as tabulex:
+                found = match(child, await tabulex.children())
+                if found is None:
+                    raise TabulexError("Tabulex knows no child of that name")
+                await tabulex.report_sick_today(found)
+            return
         await self._proxy.report_sick(child)
 
     async def undo_sick(self, child: AulaChildProfile) -> None:
-        """Take back today's report that the child is sick; see `AulaProxyClient.undo_sick`."""
+        """Take back today's report that the child is sick; see `AulaProxyClient.undo_sick`.
+
+        Raises:
+            SickReportFinalError: The child is reported sick through Tabulex, which takes no
+                report back.
+        """
         await self._ensure_valid_token()
+        if await self._proxy.get_sick_report_route(child) is AulaSickReportRoute.TABULEX:
+            raise SickReportFinalError("IST Tabulex")
         await self._proxy.undo_sick(child)
+
+    def use_tabulex(
+        self, portal: str, session: Callable[[], aiohttp.ClientSession], not_followed: Sequence[str] = NOT_FOLLOWED
+    ) -> None:
+        """Reach Tabulex's portal at `portal`, on sessions `session` makes, as a test does a simulated one."""
+        self._tabulex_portal, self._tabulex_session, self._tabulex_not_followed = portal, session, tuple(not_followed)
+
+    @asynccontextmanager
+    async def tabulex(self) -> AsyncGenerator[TabulexClient]:
+        """IST's Tabulex parent portal, logged in to through the login's widget with a new widget token, while the context lasts.
+
+        It runs on a session of its own, closed after it: Tabulex's cookies are not Aula's.
+
+        Raises:
+            NoSickReportRouteError: The login has no widget into Tabulex.
+            TabulexError: The login to Tabulex did not reach the portal.
+        """
+        await self._ensure_valid_token()
+        forms = [form for form in await self._proxy.sso_login_forms() if AulaProxyClient.is_tabulex(form[1], form[2])]
+        if not forms:
+            raise NoSickReportRouteError("The login has no widget into Tabulex")
+        _, _, url, fields = forms[0]
+        async with self._tabulex_session() as session:
+            client = TabulexClient(session, self._tabulex_portal, self._proxy.recorder)
+            try:
+                await client.log_in(url, fields, self._tabulex_not_followed)
+                yield client
+            finally:
+                self._tabulex_secrets.update(client.secrets())
+
+    async def _read_tabulex(self) -> None:
+        async with self.tabulex() as tabulex:
+            for child in await tabulex.children():
+                await tabulex.today(child)
+                await tabulex.tomorrow(child)
+                await tabulex.school_days(child)
 
     async def get_vacations(self, children: List[AulaChildProfile]) -> List[AulaVacation]:
         """The vacations and time off registered for the children."""

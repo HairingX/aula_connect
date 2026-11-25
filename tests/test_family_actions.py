@@ -122,7 +122,7 @@ def test_taking_back_a_report_of_a_child_aula_does_not_tell_as_sick_sends_nothin
     assert _written(aula) == []
 
 
-def test_a_child_reported_sick_through_tabulex_is_routed_there_and_refused_as_not_supported() -> None:
+def test_the_api_client_alone_routes_a_child_to_tabulex_and_refuses_to_report_it_sick_there() -> None:
     def arrange(aula: SimulatedAulaApi) -> None:
         aula.presence_modules = {"report_sick": "readable"}
         aula.widgets.append("0101")
@@ -131,7 +131,7 @@ def test_a_child_reported_sick_through_tabulex_is_routed_there_and_refused_as_no
     async def act(client: AulaClient, child: AulaChildProfile) -> Any:
         route = await client.get_sick_report_route(child)
         with pytest.raises(SickReportRouteNotSupportedError) as raised:
-            await client.report_sick(child)
+            await client.api.report_sick(child)
         return route, raised.value.route
 
     (route, refused), aula, _ = _run(arrange, act)

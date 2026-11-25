@@ -778,13 +778,17 @@ class AulaProxyClient:
         configurations = await self.get_presence_configurations([child])
         if any(found.child_id == child.id and found.editable(AulaPresenceModuleType.REPORT_SICK) for found in configurations):
             return AulaSickReportRoute.AULA
-        widgets = [] if self._login_result is None else self._login_result.widgets
-        if any(self._is_tabulex(widget.widget_supplier, widget.url) for widget in widgets):
+        if self.has_tabulex():
             return AulaSickReportRoute.TABULEX
         return AulaSickReportRoute.NONE
 
+    def has_tabulex(self) -> bool:
+        """Whether the login has IST's widget into Tabulex."""
+        widgets = [] if self._login_result is None else self._login_result.widgets
+        return any(self.is_tabulex(widget.widget_supplier, widget.url) for widget in widgets)
+
     @staticmethod
-    def _is_tabulex(supplier: str | None, url: str | None) -> bool:
+    def is_tabulex(supplier: str | None, url: str | None) -> bool:
         """Whether a widget of `supplier` at `url` is IST's way into Tabulex."""
         return (supplier or "").casefold() == "ist" and "tabulexaulalogin" in (url or "").casefold()
 

@@ -20,8 +20,8 @@ import socket
 import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from types import TracebackType
-from typing import Any, Self, cast
-from urllib.parse import urlencode
+from typing import TYPE_CHECKING, Any, Self, cast
+from urllib.parse import quote, urlencode
 
 import aiohttp
 from aiohttp import web
@@ -32,6 +32,9 @@ from mitid_connect.testing import Network, SimulatedMitID, User
 from .api.aula_proxy_client import AulaProxyClient
 from .login import AulaLoginClient
 from .widget_probe import probe_session
+
+if TYPE_CHECKING:
+    from .client import AulaClient
 
 APP_REDIRECT_URI = "https://app-private.aula.dk"
 """Where Aula sends the app back to, with the code; it is never requested."""
@@ -851,7 +854,8 @@ class SimulatedTabulex:
         ' $http.get("/api/children"); $http.get("api/children/{childId}/absence"); $http.post("/api/fravaer/meldSyg");'
         ' $http.get("/Account/LogOff"); $http.get("/api/settings?from=2026-11-01"); var kind = "application/json";'
         ' var view = "views/fravaer.html"; var chunk = "scripts/chunk.js"; var logo = "/img/logo.png";'
-        ' var cdn = "https://cdn.elsewhere.test/x/y"; var unknown = "api/{unknown}/x"; });'
+        ' var cdn = "https://cdn.elsewhere.test/x/y"; var unknown = "api/{unknown}/x";'
+        " $http.get('/api/PersonsAdgangTilBoern'); $http.get('/api/Fravaer/Idag/' + barn.Cpr); });"
     )
     """The text of the portal's own script, naming the addresses its code reads and changes."""
     CHUNK = 'define("fravaer", function () { return "/api/fravaer/syg"; });'
@@ -882,6 +886,23 @@ class SimulatedTabulex:
         self.login_token = secrets.token_hex(8)
         self.signed_in = secrets.token_hex(8)
         self.api_token = secrets.token_hex(16)
+        self.xsrf = f"{secrets.token_hex(8)}/{secrets.token_hex(8)}"
+        """The portal's XSRF token, which its cookie holds encoded and its API wants decoded in a header."""
+        self.children: list[dict[str, object]] = [
+            {"Cpr": "1234567890", "Fornavn": "Alma", "Efternavn": "Example", "SkoleKode": "280123",
+             "SkoleNavn": "Made-up School", "Klasse": "3A", "SkoleFravaerAdgang": True, "Pige": True},
+        ]
+        """The children the portal's API lists, each by its made-up CPR number."""
+        self.sick_today: set[str] = set()
+        """The CPR numbers of the children reported sick today."""
+        self.sick_reports: list[str] = []
+        """The CPR number of each sick report the portal took, in order."""
+        self.refuse_reports = False
+        """Whether the portal answers a sick report with a server error."""
+        self.xsrf_cookie = True
+        """Whether the portal's page sets the cookie with its XSRF token."""
+        self.garbled = False
+        """Whether the portal answers its list of children with what is no JSON."""
         self.cdn_script = ""
         """The text of the script the portal loads from another host, naming its API's addresses; set as it starts."""
         self.portal_session = base64.b64encode(secrets.token_bytes(39) + b"\xfb\xff").decode()
@@ -919,6 +940,37 @@ class SimulatedTabulex:
     def widget(self) -> dict[str, object]:
         """Aula's further fields of its Tabulex widget."""
         return {"widgetSupplier": "IST", "type": "sso", "isSecure": True, "url": self.widget_url}
+
+    async def _absence(self, request: web.Request) -> web.StreamResponse:
+        if request.headers.get("X-XSRF-TOKEN") != self.xsrf:
+            error = {"Message": "An error has occurred.", "ExceptionMessage": "The token header was not found.", "ExceptionType": "System.InvalidOperationException"}
+            return web.json_response(error, status=500)
+        cprs = {str(child["Cpr"]) for child in self.children}
+        name = request.path.rstrip("/").rsplit("/", 1)[-1]
+        if request.method == "GET" and request.path == "/api/PersonsAdgangTilBoern":
+            return web.Response(text="<html>", content_type="text/html") if self.garbled else web.json_response(self.children)
+        if request.method == "GET" and request.path.startswith(("/api/Fravaer/Idag/", "/api/Fravaer/Imorgen/")) and name in cprs:
+            sick = name in self.sick_today and "/Idag/" in request.path
+            return web.json_response(
+                {"Dag": "2026-11-24T00:00:00" if sick else None, "Aarsag": "Sygdom" if sick else None, "HarHalvdagsFravaerSetting": False,
+                 "Trin": 3, "FoersteLektionAarsag": None, "SidsteLektionAarsag": None, "Heldag": sick}
+            )
+        if request.method == "GET" and request.path.startswith("/api/Fravaer/skoledage/") and name in cprs:
+            return web.json_response([{"Dato": "2026-11-24T00:00:00", "SkoleDag": True}, {"Dato": "2026-11-29T00:00:00", "SkoleDag": False}])
+        if request.method == "PUT" and request.path == "/api/Fravaer/MeldSygIdag/":
+            sent: object = await request.json()
+            cpr = cast(dict[str, object], sent).get("Cpr") if isinstance(sent, dict) else None
+            if self.refuse_reports or not isinstance(cpr, str) or cpr not in cprs:
+                return web.json_response({"Message": "An error has occurred."}, status=500)
+            self.sick_reports.append(cpr)
+            self.sick_today.add(cpr)
+            return web.Response(status=200)
+        return web.json_response({"Message": "No HTTP resource was found that matches the request URI."}, status=404)
+
+    def point(self, client: AulaClient) -> AulaClient:
+        """Point a client's Tabulex at this simulated portal, reached on its sessions."""
+        client.use_tabulex(self.portal, self.session, ("elsewhere.test",))
+        return client
 
     def _cdn_script(self) -> str:
         api = self._base(self.API)
@@ -1086,7 +1138,12 @@ class SimulatedTabulex:
                 f'<script src="http://{self.PORTAL}:{port}/scripts/app.js?v={self.portal_session}"></script><script>var signedIn = true;</script>'
                 f'<script src="http://{self.CDN}:{port}/lib.js"></script>'
             )
-            return web.Response(text=f"<html><head><title>Tabulex</title>{scripts}</head><body><p>Fravær for Alma</p></body></html>", content_type="text/html")
+            page = web.Response(text=f"<html><head><title>Tabulex</title>{scripts}</head><body><p>Fravær for Alma</p></body></html>", content_type="text/html")
+            if self.xsrf_cookie:
+                page.set_cookie("XSRF-TOKEN", quote(self.xsrf, safe=""), path="/")
+            return page
+        if request.path.startswith(("/api/PersonsAdgangTilBoern", "/api/Fravaer/")):
+            return await self._absence(request)
         if request.path == "/scripts/app.js":
             return web.Response(text=self.SCRIPT, content_type="application/javascript")
         if request.path == "/scripts/chunk.js":

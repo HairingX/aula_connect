@@ -24,6 +24,14 @@ class NoSickReportRouteError(Exception):
     """No way is known to report the child sick: Aula's presence module does not let its guardian,
     and no widget of the login offers it."""
 
+class SickReportFinalError(Exception):
+    """The child is reported sick through a service where a report cannot be taken back."""
+
+    def __init__(self, route: str) -> None:
+        """The child is reported sick through `route`."""
+        super().__init__(f"The child is reported sick through {route}, where a report cannot be taken back")
+        self.route = route
+
 class SickReportRouteNotSupportedError(Exception):
     """The child is reported sick through a widget's own service, which this library cannot use yet."""
 

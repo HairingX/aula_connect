@@ -47,17 +47,30 @@ not send is refused with `ValueError`, before anything is sent.
 - **Presence module.** `get_presence_configurations(children)` tells, per child, what the
   guardian's dashboard may do with each part of Aula's presence module (Komme/gå), such as
   `report_sick` or `vacation`: `deactivated`, `readable` or `editable`.
-- **Reporting sick.** `report_sick(child)` reports the child sick today, and `undo_sick(child)`
-  takes it back where Aula tells the child as sick today. `get_sick_report_route(child)` says
+- **Reporting sick.** `report_sick(child)` reports the child sick today, once, and
+  `undo_sick(child)` takes it back where that can be done. `get_sick_report_route(child)` says
   where a child is reported sick:
   - `AULA`: in Aula's presence module, where the guardian's dashboard may change `report_sick`.
     Aula then informs the daycare or after-school staff only, never the school, and takes the
-    report back by itself the next day.
-  - `TABULEX`: otherwise, where the login has IST's widget into Tabulex. It is known, but not
-    supported yet: reporting sick raises `SickReportRouteNotSupportedError`.
+    report back by itself the next day; `undo_sick` takes it back where Aula tells the child as
+    sick today.
+  - `TABULEX`: otherwise, where the login has IST's widget into Tabulex. The child is found in
+    Tabulex's parent portal by its first name, and its last name where several share it, and
+    reported sick there for today. Tabulex takes no report back: `undo_sick` raises
+    `SickReportFinalError`.
   - `NONE`: otherwise. Reporting sick raises `NoSickReportRouteError`.
 
   Telling the school is a message to the teachers, a separate step.
+- **IST's Tabulex.** `async with client.tabulex() as tabulex:` logs in to Tabulex's parent
+  portal through the login's widget, with a new widget token, on a session of its own, closed
+  after it. `children()` lists the children the guardian has access to, each known by its CPR
+  number, a credential here: never logged, and hidden in what the client keeps;
+  `today(child)` and `tomorrow(child)` tell what Tabulex has of its absence, and whether it is
+  `sick` as the portal itself tells it; `school_days(child)` whether each day of its week is a
+  school day; and `report_sick_today(child)` reports it sick, once. Each request is sent as the
+  portal's own app sends it, with the XSRF token the portal set; a failure raises
+  `TabulexError`, whose text holds none of Tabulex's data. Tabulex's answers are kept with
+  Aula's, and `read_everything` reads its children and their days.
 - **Vacation ("Ferie/fri").** `get_vacations(children)` lists the vacations registered;
   `add_vacation(children, start, end, comment="")` registers one, whole days from `start` to
   `end`: the start today or later, the end at most a year after it, the comment at most 250
@@ -81,8 +94,10 @@ not send is refused with `ValueError`, before anything is sent.
   refresh, and a script's plain redirect. It goes at most 25 steps, on any host but the logins
   of Aula, MitID and UniLogin themselves, which it never enters. At the page the chain ends at:
   - it reads the scripts the page loads, from any host but those logins;
-  - it finds every address the page's and scripts' code names, and reads with GET, sent as the
-    app's own requests are, those on a site the chain reached whose path names no change (no
+  - it finds every address the page's and scripts' code names - a path the code joins a value
+    to, as in `'/api/children/' + child.Cpr`, with that value's name as a placeholder - and
+    reads with GET, sent as the app's own requests are (with the XSRF token a site set, as
+    AngularJS sends it), those on a site the chain reached whose path names no change (no
     delete, save, send, meld, log off and the like): those like an API's first, a relative one
     against the page's base and each API base the code names, at most 60; then, at most 20,
     those whose placeholder (`{childId}`, `:id`) or query (`?barnId`) a key of an earlier JSON
