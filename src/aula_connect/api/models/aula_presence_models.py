@@ -70,12 +70,13 @@ class AulaSickReportCheck:
     """What reporting a child sick would do, found without sending anything."""
     route: AulaSickReportRoute
     found: bool
-    """Whether the child is found where it would be reported: in Aula always, in Tabulex by its name."""
+    """Whether the child is found where it would be reported: in Aula always; in Tabulex by its name, at
+    the institution Aula has it at."""
     sick_today: bool | None
     """Whether it is reported sick there today already; None where that cannot be told."""
     request: str | None
     """The request a report would send, by its method and endpoint; None where none would be sent."""
     same_institution: bool | None = None
-    """Whether the child is found there at the institution Aula has it at: by Aula itself always,
-    in Tabulex where the school code Tabulex gives is Aula's institution code; None where no
-    child is found, or Tabulex gives no school code."""
+    """Whether the child is at the institution Aula has it at: by Aula itself always; in Tabulex,
+    True where it is found there, False where a child of its name is only at another institution,
+    None where Tabulex has no child of its name."""

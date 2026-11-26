@@ -889,7 +889,7 @@ class SimulatedTabulex:
         self.xsrf = f"{secrets.token_hex(8)}/{secrets.token_hex(8)}"
         """The portal's XSRF token, which its cookie holds encoded and its API wants decoded in a header."""
         self.children: list[dict[str, object]] = [
-            {"Cpr": "1234567890", "Fornavn": "Alma", "Efternavn": "Example", "SkoleKode": "280123",
+            {"Cpr": "1234567890", "Fornavn": "Alma Marie", "Efternavn": "Example", "SkoleKode": "S1",
              "SkoleNavn": "Made-up School", "Klasse": "3A", "SkoleFravaerAdgang": True, "Pige": True},
         ]
         """The children the portal's API lists, each by its made-up CPR number."""

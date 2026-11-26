@@ -89,7 +89,7 @@ def test_tabulex_tells_the_child_sick_today_once_reported() -> None:
             return found, before, await portal.today(found), await portal.tomorrow(found), await portal.school_days(found)
 
     (found, before, after, tomorrow, days), _, _, _ = _run(act)
-    assert found == TabulexChild(CPR, "Alma", "Example", "280123", "Made-up School", "3A", True)
+    assert found == TabulexChild(CPR, "Alma Marie", "Example", "S1", "Made-up School", "3A", True)
     assert before is not None and not before.sick and after is not None and after.sick
     assert tomorrow is not None and not tomorrow.sick
     assert days == [TabulexSchoolDay(datetime.date(2026, 11, 24), True), TabulexSchoolDay(datetime.date(2026, 11, 29), False)]
@@ -225,14 +225,16 @@ def test_reading_everything_tells_a_failed_read_of_tabulex() -> None:
     assert [failure for failure in failed if failure.startswith("Tabulex: The login to Tabulex ended at")] != []
 
 
-def test_a_child_is_found_in_tabulex_by_its_first_name_then_by_its_last() -> None:
+def test_a_child_is_found_in_tabulex_by_its_name_at_the_institution_aula_has_it_at() -> None:
     child = AulaChildProfile.__new__(AulaChildProfile)
-    child.first_name, child.name = "Alma", "Alma Example"
-    alma = TabulexChild("1", "alma", "Other")
-    twin = [TabulexChild("1", "Alma", "Other"), TabulexChild("2", "Alma", "Example")]
-    assert match(child, [alma, TabulexChild("3", "Bo", "Example")]) == alma
-    assert match(child, twin) == twin[1]
-    assert match(child, [TabulexChild("1", "Alma", ""), TabulexChild("2", "Alma", "")]) is None
+    child.first_name, child.name, child.institution_code = "Alma", "Alma  marie Example", "S1"
+    whole = TabulexChild("1", "Alma Marie", "Example", "S1")
+    assert match(child, [whole, TabulexChild("2", "Alma", "Other", "S1")]) == whole
+    first = TabulexChild("3", "Alma Sofie", "Other", "S1")
+    assert match(child, [first, TabulexChild("4", "Bo", "Example", "S1")]) == first
+    assert match(child, [TabulexChild("1", "Alma Marie", "Example", "S2")]) is None
+    assert match(child, [TabulexChild("1", "Alma", "", "S1"), TabulexChild("2", "Alma", "", "S1")]) is None
+    assert match(child, [TabulexChild("1", "Alma Marie", "Example", None)]) is None
     assert match(child, []) is None
 
 
@@ -282,19 +284,28 @@ def test_checking_a_sick_report_through_tabulex_finds_the_child_and_sends_nothin
         tabulex.sick_today.add(CPR)
 
     check, aula, tabulex, _ = _run(_check, arrange)
-    assert check == AulaSickReportCheck(AulaSickReportRoute.TABULEX, True, True, "PUT /api/Fravaer/MeldSygIdag/", False)
+    assert check == AulaSickReportCheck(AulaSickReportRoute.TABULEX, True, True, "PUT /api/Fravaer/MeldSygIdag/", True)
     assert tabulex.sick_reports == [] and [request for request in tabulex.requests if not request.startswith(("GET ", "POST "))] == []
     assert "presence.updateStatusByInstitutionProfileIds" not in aula.requests
 
 
-@pytest.mark.parametrize(("code", "same"), [("S1", True), (None, None)])
-def test_checking_tells_whether_tabulex_has_the_child_at_the_institution_aula_has_it_at(code: str | None, same: bool | None) -> None:
+@pytest.mark.parametrize(("code", "found", "same"), [("S1", True, True), ("S2", False, False), (None, False, False)])
+def test_checking_tells_whether_tabulex_has_the_child_at_the_institution_aula_has_it_at(code: str | None, found: bool, same: bool) -> None:
     def arrange(aula: SimulatedAulaApi, tabulex: SimulatedTabulex) -> None:
         _tabulex_route(aula, tabulex)
         tabulex.children = [{**tabulex.children[0], "SkoleKode": code}]
 
     check, _, _, _ = _run(_check, arrange)
-    assert (check.found, check.same_institution) == (True, same)
+    assert (check.found, check.same_institution) == (found, same)
+
+
+def test_a_child_tabulex_has_at_another_institution_is_not_reported() -> None:
+    def arrange(aula: SimulatedAulaApi, tabulex: SimulatedTabulex) -> None:
+        _tabulex_route(aula, tabulex)
+        tabulex.children = [{**tabulex.children[0], "SkoleKode": "S2"}]
+
+    error, _, tabulex, _ = _run(_report, arrange)
+    assert isinstance(error, TabulexError) and "at the institution Aula has it at" in str(error) and tabulex.sick_reports == []
 
 
 def test_checking_a_child_tabulex_does_not_know_says_it_would_send_nothing() -> None:

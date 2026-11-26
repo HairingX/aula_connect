@@ -55,8 +55,9 @@ not send is refused with `ValueError`, before anything is sent.
     report back by itself the next day; `undo_sick` takes it back where Aula tells the child as
     sick today.
   - `TABULEX`: otherwise, where the login has IST's widget into Tabulex. The child is found in
-    Tabulex's parent portal by its first name, and its last name where several share it, and
-    reported sick there for today. Tabulex takes no report back: `undo_sick` raises
+    Tabulex's parent portal by its whole name - Tabulex's first name holds every given name -
+    else by its first name, and only at the institution Aula has it at, Tabulex's school code
+    being Aula's institution code; then it is reported sick there for today. Tabulex takes no report back: `undo_sick` raises
     `SickReportFinalError`.
   - `NONE`: otherwise. Reporting sick raises `NoSickReportRouteError`.
 

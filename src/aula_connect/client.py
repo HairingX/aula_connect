@@ -49,7 +49,7 @@ from .pseudonym import pseudonymised, shapes
 from .login import AulaLoginClient
 from .redact import redact
 from .login.exceptions import NetworkError, TokenExpiredError
-from .tabulex import PORTAL as TABULEX_PORTAL, TabulexClient, TabulexError, match
+from .tabulex import PORTAL as TABULEX_PORTAL, TabulexClient, TabulexError, match, named
 from .widget_probe import NOT_FOLLOWED, WidgetProbe, WidgetProbeReport, probe, probe_session
 
 _LOGGER = logging.getLogger(__name__)
@@ -436,7 +436,7 @@ class AulaClient:
             async with self.tabulex() as tabulex:
                 found = match(child, await tabulex.children())
                 if found is None:
-                    raise TabulexError("Tabulex knows no child of that name")
+                    raise TabulexError("Tabulex knows no child of that name at the institution Aula has it at")
                 await tabulex.report_sick_today(found)
             return AulaSickReportRoute.TABULEX
         await self._proxy.report_sick(child)
@@ -467,10 +467,11 @@ class AulaClient:
         route = await self._proxy.get_sick_report_route(child)
         if route is AulaSickReportRoute.TABULEX:
             async with self.tabulex() as tabulex:
-                found = match(child, await tabulex.children())
+                children = await tabulex.children()
+                found = match(child, children)
                 day = None if found is None else await tabulex.today(found)
             request = None if found is None else "PUT /api/Fravaer/MeldSygIdag/"
-            same = None if found is None or found.school_code is None else found.school_code == child.institution_code
+            same = True if found is not None else (False if named(child, children) else None)
             return AulaSickReportCheck(route, found is not None, None if day is None else day.sick, request, same)
         if route is AulaSickReportRoute.AULA:
             overview = await self._proxy.get_child_overview(child)

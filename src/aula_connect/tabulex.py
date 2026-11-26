@@ -143,13 +143,28 @@ def parse_school_days(answer: Any) -> list[TabulexSchoolDay]:
     return days
 
 
+def _words(text: str) -> str:
+    return " ".join(text.casefold().split())
+
+
+def named(child: AulaChildProfile, children: list[TabulexChild]) -> list[TabulexChild]:
+    """The children of `children` of Aula's `child`'s name: its whole name, else its first name.
+
+    Tabulex's first name holds every given name, as "Milas Peter", where Aula's holds the first.
+    """
+    whole = [found for found in children if _words(f"{found.first_name} {found.last_name}") == _words(child.name)]
+    if whole:
+        return whole
+    return [found for found in children if _words(found.first_name).split(" ")[0] == _words(child.first_name)]
+
+
 def match(child: AulaChildProfile, children: list[TabulexChild]) -> TabulexChild | None:
-    """The child of `children` that is Aula's `child`: by first name, and by last name where several share it."""
-    first = [found for found in children if found.first_name.casefold() == child.first_name.casefold()]
-    if len(first) == 1:
-        return first[0]
-    whole = [found for found in first if found.last_name and child.name.casefold().endswith(found.last_name.casefold())]
-    return whole[0] if len(whole) == 1 else None
+    """The child of `children` that is Aula's `child`: the one of its name at the institution Aula has it at.
+
+    Tabulex's school code is Aula's institution code. None where no child, or more than one, is.
+    """
+    found = [item for item in named(child, children) if item.school_code == child.institution_code]
+    return found[0] if len(found) == 1 else None
 
 
 class _RecordingSession(HttpSession):
