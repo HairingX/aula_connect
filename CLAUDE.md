@@ -16,6 +16,10 @@ newsletters into typed models. The Home Assistant integration `ha_aula_connect` 
 - `aula_connect.login` is the login to Aula through MitID, `aula_connect.api` the Aula API client
   with its models and parsers, and `aula_connect.AulaClient` the two together, with the tokens
   kept fresh. MitID itself is the `mitid_connect` library's.
+- Every method of Aula's API it asks is in its catalog (`aula_connect.methods`,
+  `docs/aula-methods.md`), never guessed. Aula's own web app, whose scripts are public at
+  https://www.aula.dk/portal/, is the last word on a method's name, verb and parameters:
+  `python scripts/aula_web_methods.py` compares the catalog with it.
 - The code is GPL-3.0-or-later, as the Aula integration it comes from.
 
 <!-- BEGIN HairingX/workflows: shared; edit it there -->

@@ -32,6 +32,17 @@ as of its commit 6a79d3e. Where Aula's own web app (www.aula.dk/portal) spells o
 is listed as Aula spells it: `Documents.getSecureDocuments` and
 `Notifications.getNotificationSettingsForActiveProfile`.
 
+## Aula's own web app
+
+Aula's own web app is the last word on what a method is called and how it is asked: its page,
+https://www.aula.dk/portal/, loads its scripts from `/static/js/`, public and with no login, and
+each asks a method as `.get("?method=<name>"` or `.post("?method=<name>"`.
+`python scripts/aula_web_methods.py [FILE.json]` fetches them and prints what the catalog says
+otherwise - a name spelt otherwise, a verb otherwise, a method the web app does not ask, and one
+it asks that the catalog lacks - and writes every method it asks, with its verbs, to the file
+where given. Their parameters are read in the scripts at each place a method is asked. A method
+the web app does not ask may still be the mobile app's.
+
 <!-- The table below is checked against aula_connect.methods by the tests. -->
 
 ## Methods
