@@ -51,6 +51,10 @@ from .models.module import (
     AulaProfilePicture,
     AulaSickReportRoute,
     AulaToken,
+    AulaClosedDay,
+    AulaOpeningDay,
+    AulaPostParser,
+    AulaPosts,
     AulaVacation,
     AulaVacationDay,
     AulaVacationParser,
@@ -831,6 +835,37 @@ class AulaProxyClient:
         if route is AulaSickReportRoute.NONE:
             raise NoSickReportRouteError("No way is known to report the child sick")
         await self._write("presence.updateStatusByInstitutionProfileIds", {"institutionProfileIds": [child.id], "status": int(status)})
+
+    async def get_posts(self, profiles: List[AulaProfile], limit: int = 20) -> AulaPosts:
+        """The newest posts of the news feed, `limit` of them, for the guardian and the children."""
+        ids = dict.fromkeys(
+            [own.id for profile in profiles for own in profile.institution_profiles]
+            + [child.id for profile in profiles for child in profile.children]
+        )
+        query = f"&parent=profile&index=0&limit={limit}" + "".join(f"&institutionProfileIds[]={i}" for i in ids)
+        return await self._get("posts.getAllPosts", "posts", query, AulaPostParser.parse_posts_response, AulaPosts([], None, False))
+
+    @staticmethod
+    def _institution_codes(children: Iterable[AulaChildProfile]) -> str:
+        """The children's institutions' codes as a query's parameters, each once."""
+        return "".join(f"&institutionCodes[]={code}" for code in dict.fromkeys(child.institution_code for child in children))
+
+    async def get_closed_days(self, children: List[AulaChildProfile]) -> List[AulaClosedDay]:
+        """The days the children's institutions are closed, such as holidays."""
+        if not children: return []
+        return await self._get(
+            "presence.getClosedDays", "closed days", self._institution_codes(children),
+            AulaPostParser.parse_closed_days_response, [],
+        )
+
+    async def get_opening_hours(self, children: List[AulaChildProfile], start: date, end: date) -> List[AulaOpeningDay]:
+        """The children's institutions' hours from `start` to `end`, day by day."""
+        if not children: return []
+        query = f"{self._institution_codes(children)}&startDate={start.isoformat()}&endDate={end.isoformat()}"
+        return await self._get(
+            "presence.getOpeningHoursByInstitutionCodes", "opening hours", query,
+            AulaPostParser.parse_opening_hours_response, [],
+        )
 
     async def get_vacations(self, children: List[AulaChildProfile]) -> List[AulaVacation]:
         """The vacations and time off registered for the children."""

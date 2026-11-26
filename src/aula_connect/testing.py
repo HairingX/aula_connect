@@ -79,19 +79,6 @@ class SimulatedAulaLogin:
         self.renewals = 0
         """How many times an access token was renewed with a refresh token."""
         self.revoked: set[str] = set()
-        self.catalog: dict[str, object] = {
-            "posts.getAllPosts": {"posts": [{"id": 501, "title": "Juleklip fredag", "content": {"html": "<p>Hele skolen klipper</p>"}}]},
-            "posts.getById": {"id": 501, "title": "Juleklip fredag", "content": {"html": "<p>Hele skolen klipper</p>"}},
-            "gallery.getAlbums": [{"id": 701, "title": "Udflugt"}],
-            "gallery.getMedia": {"results": [{"id": 801}]},
-            "gallery.getMediaById": {"id": 801},
-            "groups.getGroupById": {},
-            "presence.getPresenceTemplates": {},
-            "Notifications.getNotificationSettingsForActiveProfile": {},
-            "commonFiles.getCommonFiles": {},
-        }
-        """What Aula answers each other method of its catalog that only reads with, by its name; an
-        empty list where none is given."""
         self.answers: dict[str, Handler] = {}
         """Answers that replace a step's own, by its method and path, such as "GET /broker/back-to-aula",
         for the answers the real chain gives only now and then."""
@@ -460,9 +447,35 @@ class SimulatedAulaApi:
         """The Aula API methods and widget paths asked for, in order."""
         self.meebook_requests: list[tuple[dict[str, str], str]] = []
         """Each request to Meebook: its query, and the session it names in the sessionuuid header."""
+        self.posts: list[dict[str, object]] = [
+            {
+                "id": 501,
+                "title": "Juleklip fredag",
+                "content": {"html": "<p>Hele skolen klipper julepynt fredag.</p>"},
+                "timestamp": "2026-11-23T08:00:00+00:00",
+                "publishAt": "2026-11-23T08:00:00+00:00",
+                "editedAt": None,
+                "expireAt": "2027-11-23T08:00:00+00:00",
+                "isImportant": False,
+                "importantFrom": None,
+                "importantTo": None,
+                "commentCount": 0,
+                "attachments": [],
+                "ownerProfile": {"fullName": "Kontoret", "institution": {"institutionName": "School"}},
+                "sharedWithGroups": [{"name": "Hele skolen"}],
+            }
+        ]
+        """The news feed's posts, the newest first, in Aula's fields."""
+        self.posts_last_seen = "2026-11-20T08:00:00+00:00"
+        """When the guardian last saw the posts, as Aula keeps it."""
+        self.closed_days: list[dict[str, object]] = [{"name": "Juleferie", "startDate": "2026-12-21", "endDate": "2027-01-01"}]
+        """The days the child's institution is closed, in Aula's fields."""
+        self.opening_hours: list[dict[str, object]] = [
+            {"date": "2026-12-18", "type": "general_opening_hours", "openTime": "06:30", "closeTime": "17:00"},
+            {"date": "2026-12-21", "type": "closed_day", "openTime": None, "closeTime": None},
+        ]
+        """The child's institution's hours, day by day, in Aula's fields."""
         self.catalog: dict[str, object] = {
-            "posts.getAllPosts": {"posts": [{"id": 501, "title": "Juleklip fredag", "content": {"html": "<p>Hele skolen klipper</p>"}}]},
-            "posts.getById": {"id": 501, "title": "Juleklip fredag", "content": {"html": "<p>Hele skolen klipper</p>"}},
             "gallery.getAlbums": [{"id": 701, "title": "Udflugt"}],
             "gallery.getMedia": {"results": [{"id": 801}]},
             "gallery.getMediaById": {"id": 801},
@@ -634,6 +647,18 @@ class SimulatedAulaApi:
                 except ValueError:
                     return self._refused()
                 return self._write(method, cast(dict[str, Any], body)) if isinstance(body, dict) else self._refused()
+            case "posts.getAllPosts":
+                return self._ok({"posts": self.posts, "hasMorePosts": False, "profileLastSeenPostDate": self.posts_last_seen})
+            case "posts.getById":
+                post_id = request.query.get("id", "")
+                post = next((post for post in self.posts if str(post.get("id")) == post_id), None)
+                return self._ok(post) if post is not None else self._refused()
+            case "presence.getClosedDays":
+                overview = {"closedDays": self.closed_days}
+                return self._ok({"institutionClosedDays": [{"institutionCode": self.child["institutionCode"], "closedDaysOverview": overview}]})
+            case "presence.getOpeningHoursByInstitutionCodes":
+                days = [{"institutionCode": self.child["institutionCode"], "openingHoursDto": self.opening_hours}]
+                return self._ok({"openingHoursOverviewDto": days})
             case _ if (found := known(method)) is not None and found.readable and found.verb == "GET":
                 return self._ok(self.catalog.get(method, []))
             case _:

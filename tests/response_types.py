@@ -7,12 +7,14 @@ import typing
 from typing import Any, NotRequired, Required, cast, get_args, get_origin, get_type_hints, is_typeddict
 
 from aula_connect.api.responses import (
+    get_all_posts_response,
     get_birthday_events_for_institutions,
     get_daily_overview_response,
     get_events_by_profile_ids_and_resource_ids,
     get_message_threads_response,
     get_messages_for_thread_response,
     get_notifications_response,
+    get_opening_hours_response,
     get_profile_context_response,
     get_profile_master_data_response,
     get_profiles_by_login_response,
@@ -28,6 +30,10 @@ RESPONSE_TYPES: dict[str, Any] = {
     "notifications.getNotificationsForActiveProfile": get_notifications_response.AulaGetNotificationsResponse,
     "calendar.getEventsByProfileIdsAndResourceIds": get_events_by_profile_ids_and_resource_ids.AulaGetEventsByProfileIdsAndResourceIdsResponse,
     "calendar.getBirthdayEventsForInstitutions": get_birthday_events_for_institutions.AulaGetBirthdayEventsForInstitutionsResponse,
+    "posts.getAllPosts": get_all_posts_response.AulaGetAllPostsResponse,
+    "posts.getById": get_all_posts_response.AulaGetPostByIdResponse,
+    "presence.getClosedDays": get_opening_hours_response.AulaGetClosedDaysResponse,
+    "presence.getOpeningHoursByInstitutionCodes": get_opening_hours_response.AulaGetOpeningHoursResponse,
 }
 """The declared type of the answer to each method of Aula's API."""
 

@@ -23,6 +23,9 @@ from .api.module import (
     AulaPresenceStatus,
     AulaSickReportCheck,
     AulaSickReportRoute,
+    AulaClosedDay,
+    AulaOpeningDay,
+    AulaPosts,
     AulaVacation,
     AulaVacationDay,
     AulaVacationRequest,
@@ -568,6 +571,23 @@ class AulaClient:
                 await tabulex.today(child)
                 await tabulex.tomorrow(child)
                 await tabulex.school_days(child)
+
+    async def get_posts(self, profiles: List[AulaProfile], limit: int = 20) -> AulaPosts:
+        """The newest posts of the news feed, `limit` of them, and when the guardian last saw them."""
+        await self._ensure_valid_token()
+        return await self._proxy.get_posts(profiles, limit)
+
+    async def get_closed_days(self, children: List[AulaChildProfile]) -> List[AulaClosedDay]:
+        """The days the children's institutions are closed, such as holidays."""
+        await self._ensure_valid_token()
+        return await self._proxy.get_closed_days(children)
+
+    async def get_opening_hours(
+        self, children: List[AulaChildProfile], start: datetime.date, end: datetime.date
+    ) -> List[AulaOpeningDay]:
+        """The children's institutions' hours from `start` to `end`, day by day."""
+        await self._ensure_valid_token()
+        return await self._proxy.get_opening_hours(children, start, end)
 
     async def get_vacations(self, children: List[AulaChildProfile]) -> List[AulaVacation]:
         """The vacations and time off registered for the children."""

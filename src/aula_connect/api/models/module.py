@@ -9,6 +9,7 @@ from .aula_message_thread_parser import AulaMessageThreadParser
 from .aula_notification_parser import AulaNotificationParser
 from .aula_presence_parser import AulaPresenceParser
 from .aula_profile_parser import AulaProfileParser
+from .aula_post_parser import AulaPostParser
 from .aula_vacation_parser import AulaVacationParser
 from .aula_weekly_plan_parser import AulaWeeklyPlanParser
 from .aula_easyiq_weekplan_parser import AulaEasyiqWeekplanParser
@@ -60,6 +61,13 @@ from .aula_presence_models import (
     AulaSickReportCheck,
     AulaSickReportRoute,
 )
+from .aula_post_models import (
+    AulaClosedDay,
+    AulaOpeningDay,
+    AulaPost,
+    AulaPostAttachment,
+    AulaPosts,
+)
 from .aula_vacation_models import (
     AulaVacation,
     AulaVacationDay,
@@ -108,6 +116,7 @@ __all__ = [
     'AulaNotificationParser',
     'AulaPresenceParser',
     'AulaProfileParser',
+    'AulaPostParser',
     'AulaVacationParser',
     'AulaWeeklyPlanParser',
     'AulaEasyiqWeekplanParser',
@@ -153,6 +162,12 @@ __all__ = [
     'AulaPresenceStatus',
     'AulaSickReportCheck',
     'AulaSickReportRoute',
+    #posts
+    'AulaClosedDay',
+    'AulaOpeningDay',
+    'AulaPost',
+    'AulaPostAttachment',
+    'AulaPosts',
     #vacation
     'AulaVacation',
     'AulaVacationDay',

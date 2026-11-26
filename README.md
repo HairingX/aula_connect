@@ -3,7 +3,8 @@
 A Python client for [Aula](https://www.aula.dk), the Danish school and institution platform. It
 logs in through MitID - with the MitID app's QR code or code - and reads the children's
 profiles, daily overviews (presence), calendars, birthdays, messages, notifications, weekly
-plans (Meebook, EasyIQ, MinUddannelse) and newsletters into typed models.
+plans (Meebook, EasyIQ, MinUddannelse), newsletters, the news feed's posts, and the days and
+hours the institutions are open into typed models.
 
 It is the library the Home Assistant integration
 [ha_aula_connect](https://github.com/HairingX/ha_aula_connect) is built on.
@@ -77,6 +78,13 @@ not send is refused with `ValueError`, before anything is sent.
   portal's own app sends it, with the XSRF token the portal set; a failure raises
   `TabulexError`, whose text holds none of Tabulex's data. Tabulex's answers are kept with
   Aula's, and `read_everything` reads its children and their days.
+- **News feed ("Overblik").** `get_posts(profiles, limit=20)` reads the newest posts: each
+  one's title, text (HTML), when it was written, whether it is important and from when to when,
+  its author, the groups it is shared with and what is attached; and `last_seen`, when the
+  guardian last saw the posts in Aula, so that a post written later is new to them.
+- **Closed days and opening hours.** `get_closed_days(children)` lists the days the children's
+  institutions are closed, such as a holiday, by name; `get_opening_hours(children, start, end)`
+  their hours day by day, a day the institution is closed among them.
 - **Vacation ("Ferie/fri").** `get_vacations(children)` lists the vacations registered;
   `add_vacation(children, start, end, comment="")` registers one, whole days from `start` to
   `end`: the start today or later, the end at most a year after it, the comment at most 250
