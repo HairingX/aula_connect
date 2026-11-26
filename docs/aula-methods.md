@@ -26,10 +26,8 @@ it searches for a text, it names with why.
 A name not listed may still be one Aula has. `read` asks one where it is named as a method that
 gets, `<area>.get<What>` or `<area>.find<What>`, and is about neither messages nor secure documents.
 
-The methods marked `used` and their parameters come from
-[nickknissen/aula](https://github.com/nickknissen/aula) (MIT licence, "Copyright (c) 2025 Nick"),
-as of its commit 6a79d3e. Where Aula's own web app (www.aula.dk/portal) spells one otherwise, it
-is listed as Aula spells it: `Documents.getSecureDocuments` and
+The methods marked `used` and their parameters are as a maintained client of Aula's API asks
+them. Where Aula's own web app spells one otherwise, it is listed as Aula spells it: `Documents.getSecureDocuments` and
 `Notifications.getNotificationSettingsForActiveProfile`.
 
 ## Aula's own web app
