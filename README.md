@@ -207,7 +207,7 @@ stress tests.
 ## Origin and licence
 
 The login and API client come from the Home Assistant integration
-[HairingX/aula](https://github.com/HairingX/aula), a fork of
-[scaarup/aula](https://github.com/scaarup/aula), and are licensed as it is: GNU GPL v3.0 or later
-(`LICENSE`). The MitID login started as the Aula login client by mchrdk. MitID itself is reached
-through [mitid_connect](https://github.com/HairingX/mitid_connect).
+[HairingX/aula](https://github.com/HairingX/aula), itself changed from an earlier Home Assistant
+integration for Aula under the GNU GPL, and are licensed as it is: GNU GPL v3.0 or later
+(`LICENSE`); they have been changed since. MitID itself is reached through
+[mitid_connect](https://github.com/HairingX/mitid_connect).
