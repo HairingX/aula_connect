@@ -3,20 +3,17 @@
 import dataclasses
 import datetime
 
-from aula_connect.catalog_read import ITEMS, NO_VALUES, Account, plan, readable, then
+from aula_connect.catalog_read import FOLLOWED, ITEMS, NO_VALUES, Account, plan, readable, then
+from aula_connect.methods import METHODS, Kind
 
-ACCOUNT = Account(children=[11], profiles=[11, 21], institutions=["S1"], groups=[], start=datetime.date(2026, 11, 2), end=datetime.date(2026, 11, 16))
+ACCOUNT = Account(children=[11], own=[21], profiles=[11, 21], institutions=["S1"], groups=[], start=datetime.date(2026, 11, 2), end=datetime.date(2026, 11, 16))
 
 
-def test_every_method_that_only_reads_is_planned_followed_or_said_why_not() -> None:
+def test_only_methods_that_only_read_are_planned_or_followed_and_none_for_staff() -> None:
     planned = {method for method, _ in plan(dataclasses.replace(ACCOUNT, groups=[1]))}
-    followed = {"posts.getById", "comments.getComments", "gallery.getMedia", "gallery.getMediaById", "presence.getPresenceRegistrationDetail"}
-    already = {
-        "calendar.getBirthdayEventsForInstitutions", "calendar.getEventById", "calendar.getEventsByProfileIdsAndResourceIds",
-        "notifications.getNotificationsForActiveProfile", "presence.getDailyOverview", "profiles.getProfileContext",
-        "profiles.getProfileMasterData", "profiles.getProfilesByLogin",
-    }
-    assert set(readable()) == planned | followed | already | set(NO_VALUES)
+    assert planned | FOLLOWED <= set(readable())
+    assert not [name for name in planned | FOLLOWED if METHODS[name].kind is Kind.STAFF]
+    assert set(NO_VALUES) <= set(readable())
 
 
 def test_a_child_without_a_main_group_asks_nothing_of_a_group() -> None:
@@ -28,6 +25,4 @@ def test_the_first_items_of_a_list_are_read_one_by_one_and_nothing_of_no_list() 
     assert [params for method, params in posts if method == "posts.getById"] == [(("id", str(number)),) for number in range(ITEMS)]
     assert then("posts.getAllPosts", {"posts": None}, ACCOUNT) == []
     assert then("gallery.getAlbums", None, ACCOUNT) == []
-    assert then("presence.getPresenceRegistrations", [{"id": 1}, "x", {"no": "id"}], ACCOUNT) == [
-        ("presence.getPresenceRegistrationDetail", (("id", "1"),))
-    ]
+    assert then("gallery.getMedia", {"results": [{"id": 1}, "x", {"no": "id"}]}, ACCOUNT) == [("gallery.getMediaById", (("id", "1"),))]

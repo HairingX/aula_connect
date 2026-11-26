@@ -44,7 +44,7 @@ from .api.module import (
 )
 from .anomaly import Anomaly
 from .api.aula_errors import AulaApiError, AulaCredentialError, MethodRefusedError, NoSickReportRouteError, SickReportFinalError
-from .catalog_read import NO_VALUES, Account, plan, readable, then
+from .catalog_read import FOLLOWED, NO_VALUES, UNKNOWN_VALUES, Account, plan, readable, then
 from .methods import Kind, alike, known
 from .pseudonym import pseudonymised, shapes
 from .login import AulaLoginClient
@@ -297,6 +297,7 @@ class AulaClient:
         """Ask once each method of the catalog that only reads, not asked already, and say why of any left."""
         account = Account(
             children=sorted({child.id for child in children}),
+            own=sorted({own.id for profile in profiles for own in profile.institution_profiles}),
             profiles=sorted(
                 {*(own.id for profile in profiles for own in profile.institution_profiles), *(child.id for child in children)}
             ),
@@ -315,7 +316,7 @@ class AulaClient:
         asked = {exchange.endpoint for exchange in self._proxy.recorder.exchanges()}
         for name in readable():
             if name not in asked:
-                failed.append(f"{name}: not asked, as {NO_VALUES.get(name, 'there was nothing to ask it about')}")
+                failed.append(f"{name}: not asked, as {NO_VALUES.get(name) or _not_asked(name)}")
 
     async def _ask(self, method: str, params: Sequence[tuple[str, str]]) -> Any:
         """Ask `method`, which only reads and is asked with GET, and give the data Aula answered with.
@@ -666,9 +667,16 @@ def _refuse(method: str, params: dict[str, str], body: dict[str, Any] | None) ->
         raise MethodRefusedError("params and body must not name a method or a token")
 
 
+def _not_asked(name: str) -> str:
+    """Why `name`, a method of the catalog that only reads, was not asked."""
+    return "there was nothing to ask it about" if name in FOLLOWED else UNKNOWN_VALUES
+
+
 _NEVER = {
     Kind.MESSAGES: "it gets the text of messages, which may be marked sensitive",
     Kind.SECURE_DOCUMENTS: "it gets secure documents, which may be marked sensitive",
     Kind.TOKEN: "it hands out a token, which is a credential",
     Kind.WRITE: "it changes Aula",
+    Kind.PERSONAL: "it gets answers about a person, which may be sensitive",
+    Kind.STAFF: "it is for the institution's staff, and Aula refuses a guardian",
 }

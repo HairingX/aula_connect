@@ -29,6 +29,8 @@ class Account:
 
     children: Sequence[int]
     """The children's institution profile ids."""
+    own: Sequence[int]
+    """The guardian's own institution profile ids."""
     profiles: Sequence[int]
     """The guardian's institution profile ids and the children's."""
     institutions: Sequence[str]
@@ -43,8 +45,15 @@ NO_VALUES = {
     "search.findGroups": "it searches for a text",
     "search.findProfilesAndGroups": "it searches for a text",
     "search.findRecipients": "it searches for a text",
+    "groups.getMemberships": "it names the other members of a group, read in short already",
 }
 """Why a method that only reads is not asked, by its name."""
+
+UNKNOWN_VALUES = "it is asked about an item, or with values, the account's reads do not give"
+"""Why another method that only reads is not asked."""
+
+FOLLOWED = frozenset({"posts.getById", "comments.getComments", "gallery.getMedia", "gallery.getMediaById"})
+"""The methods asked of the items of a list another answers with."""
 
 
 def _many(name: str, values: Iterable[object]) -> Params:
@@ -55,12 +64,10 @@ def plan(account: Account) -> list[tuple[str, Params]]:
     """Returns each method of the catalog that only reads, with its parameters, in its order."""
     day = account.start.isoformat()
     last = account.end.isoformat()
-    year, week, _ = account.start.isocalendar()
     kids, everyone = account.children, account.profiles
     asked: list[tuple[str, Params]] = [
         ("calendar.getDailyAggregatedEvents", (*_many("InstProfileIds[]", kids), ("Start", day), ("End", last))),
         ("calendar.getEventTypes", (("Type", "all"),)),
-        ("calendar.getEventsForInstitutions", (("Start", day), ("End", last), *_many("InstCodes[]", account.institutions))),
         ("calendar.getImportantDates", (("limit", "10"), ("includeToday", "true"))),
         ("commonFiles.getCommonFiles", (("index", "0"), ("limit", str(LIMIT)), *_many("institutionCodes[]", account.institutions))),
         ("consents.getConsentResponses", _many("institutionProfileIds[]", everyone)),
@@ -75,27 +82,30 @@ def plan(account: Account) -> list[tuple[str, Params]]:
                 *_many("filterInstProfileIds[]", everyone),
             ),
         ),
-        *(
-            ("gallery.getMediaByInstitutionProfileId", (("institutionProfileId", str(kid)), ("Limit", str(LIMIT))))
-            for kid in kids
-        ),
         ("groups.getGroupsByContext", _many("childInstitutionProfileIds[]", kids)),
-        ("messaging.getAutoReply", ()),
-        ("messaging.getCommonInboxes", ()),
+        ("CalendarFeed.getFeedConfigurations", ()),
+        ("CalendarFeed.getPolicyAnswer", ()),
+        ("messaging.getCommonInboxes", _many("institutionProfileIds[]", account.own)),
+        ("messaging.getOtpInboxesForLoggedInProfile", ()),
         ("messaging.getFolders", (("IncludeDeletedFolders", "false"),)),
         ("Notifications.getNotificationSettingsForActiveProfile", ()),
         (
             "posts.getAllPosts",
             (("parent", "profile"), ("index", "0"), ("limit", str(LIMIT)), *_many("institutionProfileIds[]", everyone)),
         ),
-        ("presence.getActivityOverview", (*_many("institutionProfileIds[]", kids), ("week", str(week)), ("year", str(year)))),
+        ("presence.getClosedDays", _many("institutionCodes[]", account.institutions)),
+        ("presence.getGeneralOpeningHours", _many("institutionCodes[]", account.institutions)),
+        (
+            "presence.getOpeningHoursByInstitutionCodes",
+            (*_many("institutionCodes[]", account.institutions), ("startDate", day), ("endDate", last)),
+        ),
         ("presence.getPickupResponsibles", _many("uniStudentIds[]", kids)),
         ("presence.getPresenceConfigurationByChildIds", _many("childIds[]", kids)),
-        ("presence.getPresenceRegistrations", (*_many("institutionProfileIds[]", kids), ("fromDate", day), ("toDate", last))),
         ("presence.getPresenceStates", _many("institutionProfileIds[]", kids)),
         ("presence.getPresenceTemplates", (*_many("filterInstitutionProfileIds[]", kids), ("fromDate", day), ("toDate", last))),
+        ("presence.getSpecificOpeningHourOverview", _many("institutionCodes[]", account.institutions)),
+        ("presence.getVacationAnnouncementsByChildren", _many("childIds[]", kids)),
         ("presence.getVacationRegistrationsByChildren", _many("childIds[]", kids)),
-        ("profiles.getContactParents", (("page", "1"), ("order", "asc"))),
     ]
     for group in account.groups:
         asked += [
@@ -131,7 +141,7 @@ def then(method: str, data: Any, account: Account) -> list[tuple[str, Params]]:
                 for post in _ids(data, "posts")
                 for asked in (
                     ("posts.getById", (("id", post),)),
-                    ("comments.getComments", (("ParentType", "post"), ("ParentId", post), ("Limit", str(LIMIT)))),
+                    ("comments.getComments", (("parentType", "Post"), ("parentId", post), ("startIndex", "0"), ("limit", str(LIMIT)))),
                 )
             ]
         case "gallery.getAlbums":
@@ -152,8 +162,6 @@ def then(method: str, data: Any, account: Account) -> list[tuple[str, Params]]:
             ]
         case "gallery.getMedia":
             return [("gallery.getMediaById", (("id", media),)) for media in _ids(data, "results")]
-        case "presence.getPresenceRegistrations":
-            return [("presence.getPresenceRegistrationDetail", (("id", registration),)) for registration in _ids(data, "")]
         case _:
             return []
 

@@ -22,3 +22,16 @@ def test_a_method_is_spelt_as_aula_s_own_web_app_spells_it() -> None:
     assert known("Documents.getSecureDocuments") is not None
     assert known("Notifications.getNotificationSettingsForActiveProfile") is not None
     assert known("notifications.getNotificationsForActiveProfile") is not None
+
+
+def test_a_method_aula_refused_a_guardian_or_that_acts_on_a_get_is_never_readable() -> None:
+    for name in ("calendar.getEventsForInstitutions", "messaging.getAutoReply", "profiles.getContactParents", "presence.getPresenceRegistrations"):
+        assert METHODS[name].kind is Kind.STAFF and not METHODS[name].readable
+    for name in ("profiles.markOnboardingCompleted", "profiles.impersonateUser", "session.keepAlive"):
+        assert METHODS[name].kind is Kind.WRITE
+    assert METHODS["profiles.getAdditionalDataResponsesForOwner"].kind is Kind.PERSONAL
+    assert known("gallery.getMediaByInstitutionProfileId") is None
+
+
+def test_comments_are_asked_as_aula_s_own_web_app_asks_them() -> None:
+    assert [parameter.name for parameter in METHODS["comments.getComments"].query] == ["parentType", "parentId", "startIndex", "limit"]

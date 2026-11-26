@@ -6,7 +6,7 @@ PAGE = '<script src="/static/script/IE.js"></script><script src="/static/js/0.ab
 SOURCE = (
     'A.b.get("?method=posts.getAllPosts",{params:r});'
     'u.b.post("?method=Documents.getSecureDocuments",t.params,r);'
-    'T.b.get("?method=presence.getClosedDays",{params:t});'
+    'T.b.get("?method=presence.getSomethingNew",{params:t});'
     'x.get("?method=calendar.getEventsByProfileIdsAndResourceIds");'
     'url:"?method=galleryAdmin.getAlbums"'
 )
@@ -20,7 +20,7 @@ def test_a_method_is_found_with_the_verbs_it_is_asked_with_and_none_where_only_n
     assert methods([SOURCE]) == {
         "posts.getAllPosts": {"GET"},
         "Documents.getSecureDocuments": {"POST"},
-        "presence.getClosedDays": {"GET"},
+        "presence.getSomethingNew": {"GET"},
         "calendar.getEventsByProfileIdsAndResourceIds": {"GET"},
         "galleryAdmin.getAlbums": set(),
     }
@@ -29,11 +29,12 @@ def test_a_method_is_found_with_the_verbs_it_is_asked_with_and_none_where_only_n
 def test_what_the_catalog_says_otherwise_is_named_but_an_administrator_s_method() -> None:
     found = methods([SOURCE])
     lines = differences({**found, "x.y": set()})
-    assert "not in the catalog: presence.getClosedDays GET" in lines
+    assert "not in the catalog: presence.getSomethingNew GET" in lines
     assert "not in the catalog: x.y ?" in lines
     assert "asked otherwise: calendar.getEventsByProfileIdsAndResourceIds with POST, the web app with GET" in lines
     assert "not in the web app: aulaToken.getAulaToken" in lines
-    assert not any("posts.getAllPosts" in line or "galleryAdmin" in line or "Documents" in line for line in lines)
+    named = {line.split(": ", 1)[1].split(" ")[0] for line in lines}
+    assert not named & {"posts.getAllPosts", "galleryAdmin.getAlbums", "Documents.getSecureDocuments"}
 
 
 def test_a_name_spelt_otherwise_in_the_web_app_is_named() -> None:

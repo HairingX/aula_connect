@@ -47,7 +47,7 @@ def differences(found: Mapping[str, set[str]]) -> list[str]:
     lower = {name.lower(): name for name in found}
     lines: list[str] = []
     for name, method in METHODS.items():
-        spelt = lower.get(name.lower())
+        spelt = name if name in found else lower.get(name.lower())
         if spelt is None:
             lines.append(f"not in the web app: {name}")
         elif spelt != name:

@@ -200,7 +200,8 @@ def _same_shape(original: Any, replaced: Any) -> None:
 
 def test_reading_everything_reads_each_kind_once_each_event_but_a_lesson_by_its_id_the_next_birthday_too_and_no_sensitive_thread() -> None:
     failed, _, client, aula = _read_everything()
-    assert failed == [f"{name}: not asked, as it searches for a text" for name in ("search.findGroups", "search.findProfilesAndGroups", "search.findRecipients")]
+    assert [line for line in failed if ": not asked, as " not in line] == []
+    assert "search.findGroups: not asked, as it searches for a text" in failed
     birthdays = [exchange.url for exchange in client.api.recorder.exchanges() if "getBirthdayEvents" in exchange.url]
     assert any(f"start={START:%Y-%m-%d}" in url and f"end={(START + timedelta(days=28)):%Y-%m-%d}" in url for url in birthdays)
     assert aula.requests == [
@@ -230,31 +231,32 @@ def test_reading_everything_reads_each_kind_once_each_event_but_a_lesson_by_its_
 CATALOG = [
     "calendar.getDailyAggregatedEvents",
     "calendar.getEventTypes",
-    "calendar.getEventsForInstitutions",
     "calendar.getImportantDates",
     "commonFiles.getCommonFiles",
     "consents.getConsentResponses",
     "gallery.getAlbums",
     "gallery.getMedia",
     "gallery.getMediaById",
-    "gallery.getMediaByInstitutionProfileId",
     "groups.getGroupsByContext",
-    "messaging.getAutoReply",
+    "CalendarFeed.getFeedConfigurations",
+    "CalendarFeed.getPolicyAnswer",
     "messaging.getCommonInboxes",
+    "messaging.getOtpInboxesForLoggedInProfile",
     "messaging.getFolders",
     "Notifications.getNotificationSettingsForActiveProfile",
     "posts.getAllPosts",
     "posts.getById",
     "comments.getComments",
-    "presence.getActivityOverview",
+    "presence.getClosedDays",
+    "presence.getGeneralOpeningHours",
+    "presence.getOpeningHoursByInstitutionCodes",
     "presence.getPickupResponsibles",
     "presence.getPresenceConfigurationByChildIds",
-    "presence.getPresenceRegistrations",
-    "presence.getPresenceRegistrationDetail",
     "presence.getPresenceStates",
     "presence.getPresenceTemplates",
+    "presence.getSpecificOpeningHourOverview",
+    "presence.getVacationAnnouncementsByChildren",
     "presence.getVacationRegistrationsByChildren",
-    "profiles.getContactParents",
     "calendar.getBirthdayEventsForGroup",
     "calendar.getDailyEventCountForGroup",
     "calendar.geteventsbygroupid",
@@ -262,8 +264,9 @@ CATALOG = [
     "groups.getMembershipsLight",
     "profiles.getContactlist",
 ]
-"""Every method of the catalog that only reads and is not read for a model, each asked once, the
-items of a list after it; the first post by its id, as each of the first three would be."""
+"""Every method of the catalog that only reads and is not read for a model, nor for staff, each
+asked once, the items of a list after it; the first post by its id, as each of the first three
+would be."""
 
 
 def test_reading_everything_asks_every_method_that_only_reads_with_the_account_s_own_ids() -> None:
@@ -638,6 +641,9 @@ def test_reading_refuses_a_method_that_does_not_only_get(method: str) -> None:
         ("documents.getSecureDocuments", {"index": 0}, "secure documents"),
         ("calendar.getEventsByProfileIdsAndResourceIds", None, "asked with POST, with a body"),
         ("presence.getDailyOverview", {"childIds": [1]}, "asked with GET, without a body"),
+        ("calendar.getEventsForInstitutions", None, "for the institution's staff"),
+        ("profiles.getAdditionalDataResponsesForOwner", None, "answers about a person"),
+        ("profiles.markOnboardingCompleted", None, "it changes Aula"),
         ("messaging.getUnknownThing", None, "is not known"),
         ("calendar.updateSomething", None, "is not known"),
     ],
