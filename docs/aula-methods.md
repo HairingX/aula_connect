@@ -18,6 +18,11 @@ and never one of a kind it does not ask, whatever the case of its name.
 - **Errors.** Aula answers a name it has no method by with code 10, and parameters it does not
   take with HTTP 400 and code 40.
 
+`AulaClient.read_everything` asks every listed method that only reads once, about the account's
+own children, institutions and main groups, with the values the maintained client sends, and
+then the first items of a list one by one, such as a post by its id; a method it cannot ask, as
+it searches for a text, it names with why.
+
 A name not listed may still be one Aula has. `read` asks one where it is named as a method that
 gets, `<area>.get<What>` or `<area>.find<What>`, and is about neither messages nor secure documents.
 

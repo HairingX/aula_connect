@@ -30,6 +30,7 @@ from aiohttp.test_utils import TestServer
 from mitid_connect.testing import Network, SimulatedMitID, User
 
 from .api.aula_proxy_client import AulaProxyClient
+from .methods import known
 from .login import AulaLoginClient
 from .widget_probe import probe_session
 
@@ -78,6 +79,17 @@ class SimulatedAulaLogin:
         self.renewals = 0
         """How many times an access token was renewed with a refresh token."""
         self.revoked: set[str] = set()
+        self.catalog: dict[str, object] = {
+            "posts.getAllPosts": {"posts": [{"id": 501, "title": "Juleklip fredag", "content": {"html": "<p>Hele skolen klipper</p>"}}]},
+            "posts.getById": {"id": 501, "title": "Juleklip fredag", "content": {"html": "<p>Hele skolen klipper</p>"}},
+            "gallery.getAlbums": [{"id": 701, "title": "Udflugt"}],
+            "gallery.getMedia": {"results": [{"id": 801}]},
+            "gallery.getMediaById": {"id": 801},
+            "presence.getPresenceRegistrations": [{"id": 901}],
+            "presence.getPresenceRegistrationDetail": {"id": 901},
+        }
+        """What Aula answers each other method of its catalog that only reads with, by its name; an
+        empty list where none is given."""
         self.answers: dict[str, Handler] = {}
         """Answers that replace a step's own, by its method and path, such as "GET /broker/back-to-aula",
         for the answers the real chain gives only now and then."""
@@ -446,6 +458,17 @@ class SimulatedAulaApi:
         """The Aula API methods and widget paths asked for, in order."""
         self.meebook_requests: list[tuple[dict[str, str], str]] = []
         """Each request to Meebook: its query, and the session it names in the sessionuuid header."""
+        self.catalog: dict[str, object] = {
+            "posts.getAllPosts": {"posts": [{"id": 501, "title": "Juleklip fredag", "content": {"html": "<p>Hele skolen klipper</p>"}}]},
+            "posts.getById": {"id": 501, "title": "Juleklip fredag", "content": {"html": "<p>Hele skolen klipper</p>"}},
+            "gallery.getAlbums": [{"id": 701, "title": "Udflugt"}],
+            "gallery.getMedia": {"results": [{"id": 801}]},
+            "gallery.getMediaById": {"id": 801},
+            "presence.getPresenceRegistrations": [{"id": 901}],
+            "presence.getPresenceRegistrationDetail": {"id": 901},
+        }
+        """What Aula answers each other method of its catalog that only reads with, by its name; an
+        empty list where none is given."""
         self.answers: dict[str, Handler] = {}
         """Answers that replace the API's own: by the Aula API method, such as "presence.getDailyOverview",
         or by the method and path of a widget's request, such as "GET /aulaapi/relatedweekplan/all"."""
@@ -607,6 +630,8 @@ class SimulatedAulaApi:
                 except ValueError:
                     return self._refused()
                 return self._write(method, cast(dict[str, Any], body)) if isinstance(body, dict) else self._refused()
+            case _ if (found := known(method)) is not None and found.readable and found.verb == "GET":
+                return self._ok(self.catalog.get(method, []))
             case _:
                 return web.json_response({"status": {"code": 404, "message": f"Unknown method {method}"}}, status=404)
 

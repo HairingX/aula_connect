@@ -140,7 +140,9 @@ def _account(aula: SimulatedAulaApi) -> None:
     aula.newsletters = [{"navn": "Alma Østergaard", "institutioner": [{"institution": "Kildebakkens Skole", "ugebreve": [{"indhold": "<p>Alma har fri</p>"}]}]}]
 
 
-def _read_everything(key: bytes = KEY) -> tuple[list[str], dict[str, Any], AulaClient, SimulatedAulaApi]:
+def _read_everything(
+    key: bytes = KEY, answers: dict[str, Any] | None = None
+) -> tuple[list[str], dict[str, Any], AulaClient, SimulatedAulaApi]:
     async def run() -> tuple[list[str], dict[str, Any], AulaClient, SimulatedAulaApi]:
         async with (
             SimulatedAulaLogin() as login,
@@ -150,6 +152,7 @@ def _read_everything(key: bytes = KEY) -> tuple[list[str], dict[str, Any], AulaC
             login_client = login.point(AulaLoginClient(session, "parent"))
             tokens = (await login_client.authenticate())["tokens"]
             _account(aula)
+            aula.answers.update(answers or {})
             client = AulaClient(
                 session,
                 access_token=tokens["access_token"],
@@ -197,7 +200,7 @@ def _same_shape(original: Any, replaced: Any) -> None:
 
 def test_reading_everything_reads_each_kind_once_each_event_but_a_lesson_by_its_id_the_next_birthday_too_and_no_sensitive_thread() -> None:
     failed, _, client, aula = _read_everything()
-    assert failed == []
+    assert failed == [f"{name}: not asked, as it searches for a text" for name in ("search.findGroups", "search.findProfilesAndGroups", "search.findRecipients")]
     birthdays = [exchange.url for exchange in client.api.recorder.exchanges() if "getBirthdayEvents" in exchange.url]
     assert any(f"start={START:%Y-%m-%d}" in url and f"end={(START + timedelta(days=28)):%Y-%m-%d}" in url for url in birthdays)
     assert aula.requests == [
@@ -220,7 +223,68 @@ def test_reading_everything_reads_each_kind_once_each_event_but_a_lesson_by_its_
         "easyiq",
         "aulaToken.getAulaToken",
         "minuddannelse",
+        *CATALOG,
     ]
+
+
+CATALOG = [
+    "calendar.getDailyAggregatedEvents",
+    "calendar.getEventTypes",
+    "calendar.getEventsForInstitutions",
+    "calendar.getImportantDates",
+    "commonFiles.getCommonFiles",
+    "consents.getConsentResponses",
+    "gallery.getAlbums",
+    "gallery.getMedia",
+    "gallery.getMediaById",
+    "gallery.getMediaByInstitutionProfileId",
+    "groups.getGroupsByContext",
+    "messaging.getAutoReply",
+    "messaging.getCommonInboxes",
+    "messaging.getFolders",
+    "notifications.getNotificationSettingsForActiveProfile",
+    "posts.getAllPosts",
+    "posts.getById",
+    "comments.getComments",
+    "presence.getActivityOverview",
+    "presence.getPickupResponsibles",
+    "presence.getPresenceConfigurationByChildIds",
+    "presence.getPresenceRegistrations",
+    "presence.getPresenceRegistrationDetail",
+    "presence.getPresenceStates",
+    "presence.getPresenceTemplates",
+    "presence.getVacationRegistrationsByChildren",
+    "profiles.getContactParents",
+    "calendar.getBirthdayEventsForGroup",
+    "calendar.getDailyEventCountForGroup",
+    "calendar.geteventsbygroupid",
+    "groups.getGroupById",
+    "groups.getMembershipsLight",
+    "profiles.getContactlist",
+]
+"""Every method of the catalog that only reads and is not read for a model, each asked once, the
+items of a list after it; the first post by its id, as each of the first three would be."""
+
+
+def test_reading_everything_asks_every_method_that_only_reads_with_the_account_s_own_ids() -> None:
+    _, _, client, aula = _read_everything()
+    urls = {exchange.endpoint: exchange.url for exchange in client.api.recorder.exchanges()}
+    posts = urls["posts.getAllPosts"]
+    assert "parent=profile" in posts
+    assert f"institutionProfileIds%5B%5D={aula.child['id']}" in posts
+    assert f"institutionProfileIds%5B%5D={aula.institution['id']}" in posts
+    assert "id=501" in urls["posts.getById"]
+    assert "albumId=701" in urls["gallery.getMedia"] and "id=801" in urls["gallery.getMediaById"]
+    assert "groupId=1" in urls["groups.getGroupById"]
+
+
+def test_reading_everything_says_what_aula_answered_a_method_of_the_catalog_with_an_error() -> None:
+    async def gone(_request: Any) -> Any:
+        return web.json_response({"status": {"code": 40, "message": "Bad parameters"}, "data": None}, status=400)
+
+    failed, _, _, _ = _read_everything(answers={"posts.getAllPosts": gone})
+    assert "posts.getAllPosts: Aula answered code 40: Bad parameters" in failed
+    assert "posts.getById: not asked, as there was nothing to ask it about" in failed
 
 
 def test_the_made_up_answers_have_every_shape_aula_was_seen_to_send_and_no_other() -> None:
@@ -243,7 +307,7 @@ def test_the_answers_handed_out_hold_no_one_s_name_id_or_contact_and_no_token() 
         assert value not in text, value
     assert "access_token" not in text
     assert "eyJ" not in text
-    assert "parent" not in text
+    assert '"parent"' not in text and "=parent" not in text
     for token in client.api.secrets():
         assert token not in text
     assert "Fortroligt" not in text
@@ -318,7 +382,7 @@ def test_reading_everything_names_what_it_could_not_read_and_reads_the_rest() ->
             assert "meebook" not in aula.requests
             return failed
 
-    [failure] = asyncio.run(run())
+    [failure] = [line for line in asyncio.run(run()) if ": not asked, as " not in line]
     assert failure.startswith("daily overviews: ")
 
 

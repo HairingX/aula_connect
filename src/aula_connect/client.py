@@ -3,7 +3,7 @@
 from collections.abc import AsyncGenerator, Awaitable, Collection, Sequence
 from contextlib import asynccontextmanager
 from functools import partial
-from typing import Any, Callable, List
+from typing import Any, Callable, List, cast
 import asyncio
 import datetime
 import json
@@ -43,7 +43,8 @@ from .api.module import (
     AULA_NOTIFICATION_TYPES,
 )
 from .anomaly import Anomaly
-from .api.aula_errors import AulaCredentialError, MethodRefusedError, NoSickReportRouteError, SickReportFinalError
+from .api.aula_errors import AulaApiError, AulaCredentialError, MethodRefusedError, NoSickReportRouteError, SickReportFinalError
+from .catalog_read import NO_VALUES, Account, plan, readable, then
 from .methods import Kind, alike, known
 from .pseudonym import pseudonymised, shapes
 from .login import AulaLoginClient
@@ -230,10 +231,13 @@ class AulaClient:
         birthdays, weekly plans and newsletters, and
         the next birthday from `start` is looked for too, four weeks a request, a year at most; the messages of every thread of the
         newest page are read as well, but for those Aula marks sensitive, which the client never
-        reads.
+        reads. Then each other method of the catalog that only reads is asked once about the
+        account's children, institutions and groups, and the first items of a list it answers
+        with, such as posts and albums, one by one.
 
         Returns:
-            What could not be read, each with its error.
+            What could not be read, each with its error, and each method of the catalog that only
+            reads and was not asked, with why.
 
         Raises:
             AulaCredentialError: The tokens can no longer be renewed; only a new login helps.
@@ -278,7 +282,56 @@ class AulaClient:
             await read("newsletters", partial(self.get_newsletters, children, start, end))
         if self._proxy.has_tabulex():
             await read("Tabulex", self._read_tabulex)
+        await self._read_catalog(read, profiles, children, start, end, failed)
         return failed
+
+    async def _read_catalog(
+        self,
+        read: Callable[[str, Callable[[], Awaitable[Any]]], Awaitable[Any]],
+        profiles: Sequence[AulaProfile],
+        children: Sequence[AulaChildProfile],
+        start: datetime.datetime,
+        end: datetime.datetime,
+        failed: List[str],
+    ) -> None:
+        """Ask once each method of the catalog that only reads, not asked already, and say why of any left."""
+        account = Account(
+            children=sorted({child.id for child in children}),
+            profiles=sorted(
+                {*(own.id for profile in profiles for own in profile.institution_profiles), *(child.id for child in children)}
+            ),
+            institutions=sorted({child.institution_code for child in children}),
+            groups=sorted({child.main_group.id for child in children if child.main_group.id}),
+            start=start.date(),
+            end=end.date(),
+        )
+        before = {exchange.endpoint for exchange in self._proxy.recorder.exchanges()}
+        queue = [(method, params) for method, params in plan(account) if method not in before]
+        while queue:
+            method, params = queue.pop(0)
+            data = await read(method, partial(self._ask, method, params))
+            if data is not None:
+                queue[0:0] = then(method, data, account)
+        asked = {exchange.endpoint for exchange in self._proxy.recorder.exchanges()}
+        for name in readable():
+            if name not in asked:
+                failed.append(f"{name}: not asked, as {NO_VALUES.get(name, 'there was nothing to ask it about')}")
+
+    async def _ask(self, method: str, params: Sequence[tuple[str, str]]) -> Any:
+        """Ask `method`, which only reads and is asked with GET, and give the data Aula answered with.
+
+        Raises:
+            AulaApiError: Aula answered with an error, or with no data.
+        """
+        _refuse(method, dict(params), None)
+        await self._ensure_valid_token()
+        answer = await self._proxy.custom_api_call(f"?{urlencode([*params, ('method', method)])}", None)
+        status = cast(dict[str, Any], answer).get("status") if isinstance(answer, dict) else None
+        code = cast(dict[str, Any], status).get("code") if isinstance(status, dict) else None
+        if code != 0:
+            message = cast(dict[str, Any], status).get("message") if isinstance(status, dict) else None
+            raise AulaApiError(f"Aula answered code {code}: {message or 'no message'}")
+        return cast(dict[str, Any], answer).get("data")
 
     def anomalies(self, since: datetime.datetime | None = None) -> tuple[Anomaly, ...]:
         """What Aula sent that this client does not know or could not read, the latest first.
