@@ -28,7 +28,9 @@ gets, `<area>.get<What>` or `<area>.find<What>`, and is about neither messages n
 
 The methods marked `used` and their parameters come from
 [nickknissen/aula](https://github.com/nickknissen/aula) (MIT licence, "Copyright (c) 2025 Nick"),
-as of its commit 6a79d3e.
+as of its commit 6a79d3e. Where Aula's own web app (www.aula.dk/portal) spells one otherwise, it
+is listed as Aula spells it: `Documents.getSecureDocuments` and
+`Notifications.getNotificationSettingsForActiveProfile`.
 
 <!-- The table below is checked against aula_connect.methods by the tests. -->
 
@@ -51,7 +53,7 @@ as of its commit 6a79d3e.
 | `comments.getComments` | GET | read | used | `ParentType`, `ParentId`, `Limit` | - |
 | `commonFiles.getCommonFiles` | GET | read | used | `index`, `limit`, `institutionCodes[]` | - |
 | `consents.getConsentResponses` | GET | read | used | `institutionProfileIds[]` | - |
-| `documents.getSecureDocuments` | POST | secure_documents | used | - | `index`, `limit`, `filterInstitutionProfileIds` |
+| `Documents.getSecureDocuments` | POST | secure_documents | used | - | `index`, `limit`, `filterInstitutionProfileIds` |
 | `gallery.getAlbums` | GET | read | used | `index`, `limit`, `sortOn`, `orderDirection`, `filterBy`, `filterInstProfileIds[]` | - |
 | `gallery.getMedia` | GET | read | used | `albumId`, `index`, `limit`, `sortOn`, `orderDirection`, `filterBy`, `filterInstProfileIds[]` | - |
 | `gallery.getMediaById` | GET | read | used | `id` | - |
@@ -67,7 +69,7 @@ as of its commit 6a79d3e.
 | `messaging.getThreads` | GET | messages | seen | `sortOn`, `orderDirection`, `page` | - |
 | `messaging.getThreadsInBundle` | GET | messages | used | `BundleId` | - |
 | `messaging.setLastReadMessage` | POST | write | used | - | `threadId`, `messageId`, `commonInboxId`, `otpInboxId` |
-| `notifications.getNotificationSettingsForActiveProfile` | GET | read | used | - | - |
+| `Notifications.getNotificationSettingsForActiveProfile` | GET | read | used | - | - |
 | `notifications.getNotificationsForActiveProfile` | GET | read | seen | `activeChildrenIds[]`, `activeInstitutionCodes[]` | - |
 | `posts.getAllPosts` | GET | read | used | `parent`, `index`, `limit`, `institutionProfileIds[]` | - |
 | `posts.getById` | GET | read | used | `id` | - |

@@ -83,7 +83,7 @@ def plan(account: Account) -> list[tuple[str, Params]]:
         ("messaging.getAutoReply", ()),
         ("messaging.getCommonInboxes", ()),
         ("messaging.getFolders", (("IncludeDeletedFolders", "false"),)),
-        ("notifications.getNotificationSettingsForActiveProfile", ()),
+        ("Notifications.getNotificationSettingsForActiveProfile", ()),
         (
             "posts.getAllPosts",
             (("parent", "profile"), ("index", "0"), ("limit", str(LIMIT)), *_many("institutionProfileIds[]", everyone)),

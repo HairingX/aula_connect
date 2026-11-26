@@ -242,7 +242,7 @@ CATALOG = [
     "messaging.getAutoReply",
     "messaging.getCommonInboxes",
     "messaging.getFolders",
-    "notifications.getNotificationSettingsForActiveProfile",
+    "Notifications.getNotificationSettingsForActiveProfile",
     "posts.getAllPosts",
     "posts.getById",
     "comments.getComments",
