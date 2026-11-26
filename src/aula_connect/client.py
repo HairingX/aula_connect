@@ -572,10 +572,15 @@ class AulaClient:
                 await tabulex.tomorrow(child)
                 await tabulex.school_days(child)
 
-    async def get_posts(self, profiles: List[AulaProfile], limit: int = 20) -> AulaPosts:
-        """The newest posts of the news feed, `limit` of them, and when the guardian last saw them."""
+    async def get_posts(
+        self, profiles: List[AulaProfile], limit: int = 20, children: List[AulaChildProfile] | None = None
+    ) -> AulaPosts:
+        """The newest posts of the news feed, `limit` of them, and when the guardian last saw them.
+
+        With `children`, only those for the guardian and those children.
+        """
         await self._ensure_valid_token()
-        return await self._proxy.get_posts(profiles, limit)
+        return await self._proxy.get_posts(profiles, limit, children)
 
     async def get_closed_days(self, children: List[AulaChildProfile]) -> List[AulaClosedDay]:
         """The days the children's institutions are closed, such as holidays."""

@@ -81,7 +81,9 @@ not send is refused with `ValueError`, before anything is sent.
 - **News feed ("Overblik").** `get_posts(profiles, limit=20)` reads the newest posts: each
   one's title, text (HTML), when it was written, whether it is important and from when to when,
   its author, the groups it is shared with and what is attached; and `last_seen`, when the
-  guardian last saw the posts in Aula, so that a post written later is new to them.
+  guardian last saw the posts in Aula, so that a post written later is new to them. With
+  `children`, it reads only the posts for the guardian and those children, as Aula's own filter
+  of the children does.
 - **Closed days and opening hours.** `get_closed_days(children)` lists the days the children's
   institutions are closed, such as a holiday, by name; `get_opening_hours(children, start, end)`
   their hours day by day, a day the institution is closed among them.

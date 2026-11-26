@@ -836,11 +836,17 @@ class AulaProxyClient:
             raise NoSickReportRouteError("No way is known to report the child sick")
         await self._write("presence.updateStatusByInstitutionProfileIds", {"institutionProfileIds": [child.id], "status": int(status)})
 
-    async def get_posts(self, profiles: List[AulaProfile], limit: int = 20) -> AulaPosts:
-        """The newest posts of the news feed, `limit` of them, for the guardian and the children."""
+    async def get_posts(
+        self, profiles: List[AulaProfile], limit: int = 20, children: List[AulaChildProfile] | None = None
+    ) -> AulaPosts:
+        """The newest posts of the news feed, `limit` of them, for the guardian and the children.
+
+        With `children`, only those for the guardian and those children, as Aula's own filter of
+        the children asks.
+        """
+        chosen = [child for profile in profiles for child in profile.children] if children is None else children
         ids = dict.fromkeys(
-            [own.id for profile in profiles for own in profile.institution_profiles]
-            + [child.id for profile in profiles for child in profile.children]
+            [own.id for profile in profiles for own in profile.institution_profiles] + [child.id for child in chosen]
         )
         query = f"&parent=profile&index=0&limit={limit}" + "".join(f"&institutionProfileIds[]={i}" for i in ids)
         return await self._get("posts.getAllPosts", "posts", query, AulaPostParser.parse_posts_response, AulaPosts([], None, False))
