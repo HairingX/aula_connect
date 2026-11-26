@@ -52,7 +52,15 @@ NO_VALUES = {
 UNKNOWN_VALUES = "it is asked about an item, or with values, the account's reads do not give"
 """Why another method that only reads is not asked."""
 
-FOLLOWED = frozenset({"posts.getById", "comments.getComments", "gallery.getMedia", "gallery.getMediaById"})
+FOLLOWED = frozenset(
+    {
+        "posts.getById",
+        "comments.getComments",
+        "gallery.getMedia",
+        "gallery.getMediaById",
+        "presence.getVacationRegistrationResponse",
+    }
+)
 """The methods asked of the items of a list another answers with."""
 
 
@@ -159,6 +167,19 @@ def then(method: str, data: Any, account: Account) -> list[tuple[str, Params]]:
                     ),
                 )
                 for album in _ids(data, "albums")[:1]
+            ]
+        case "presence.getVacationRegistrationsByChildren":
+            groups = cast(list[Any], data) if isinstance(data, list) else []
+            requests: list[dict[str, Any]] = []
+            for group in groups:
+                if isinstance(group, dict):
+                    listed = cast(list[Any], cast(dict[str, Any], group).get("vacationRegistrations") or [])
+                    requests += [cast(dict[str, Any], item) for item in listed if isinstance(item, dict)]
+            found = [item.get("responseId") for item in requests]
+            return [
+                ("presence.getVacationRegistrationResponse", (("vacationRegistrationResponseId", str(response)),))
+                for response in found[:ITEMS]
+                if response is not None
             ]
         case "gallery.getMedia":
             return [("gallery.getMediaById", (("id", media),)) for media in _ids(data, "results")]

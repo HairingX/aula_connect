@@ -26,3 +26,11 @@ def test_the_first_items_of_a_list_are_read_one_by_one_and_nothing_of_no_list() 
     assert then("posts.getAllPosts", {"posts": None}, ACCOUNT) == []
     assert then("gallery.getAlbums", None, ACCOUNT) == []
     assert then("gallery.getMedia", {"results": [{"id": 1}, "x", {"no": "id"}]}, ACCOUNT) == [("gallery.getMediaById", (("id", "1"),))]
+
+
+def test_the_first_vacation_requests_are_read_one_by_one() -> None:
+    answer = [{"vacationRegistrations": [{"responseId": 5}, {"no": "id"}, "x"]}, "y"]
+    assert then("presence.getVacationRegistrationsByChildren", answer, ACCOUNT) == [
+        ("presence.getVacationRegistrationResponse", (("vacationRegistrationResponseId", "5"),))
+    ]
+    assert then("presence.getVacationRegistrationsByChildren", {"no": "list"}, ACCOUNT) == []

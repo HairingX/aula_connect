@@ -85,8 +85,10 @@ class SimulatedAulaLogin:
             "gallery.getAlbums": [{"id": 701, "title": "Udflugt"}],
             "gallery.getMedia": {"results": [{"id": 801}]},
             "gallery.getMediaById": {"id": 801},
-            "presence.getPresenceRegistrations": [{"id": 901}],
-            "presence.getPresenceRegistrationDetail": {"id": 901},
+            "groups.getGroupById": {},
+            "presence.getPresenceTemplates": {},
+            "Notifications.getNotificationSettingsForActiveProfile": {},
+            "commonFiles.getCommonFiles": {},
         }
         """What Aula answers each other method of its catalog that only reads with, by its name; an
         empty list where none is given."""
@@ -464,8 +466,10 @@ class SimulatedAulaApi:
             "gallery.getAlbums": [{"id": 701, "title": "Udflugt"}],
             "gallery.getMedia": {"results": [{"id": 801}]},
             "gallery.getMediaById": {"id": 801},
-            "presence.getPresenceRegistrations": [{"id": 901}],
-            "presence.getPresenceRegistrationDetail": {"id": 901},
+            "groups.getGroupById": {},
+            "presence.getPresenceTemplates": {},
+            "Notifications.getNotificationSettingsForActiveProfile": {},
+            "commonFiles.getCommonFiles": {},
         }
         """What Aula answers each other method of its catalog that only reads with, by its name; an
         empty list where none is given."""

@@ -66,6 +66,9 @@ def _account(aula: SimulatedAulaApi) -> None:
         "shortName": "AØ",
         "userId": "alma9921",
     }
+    aula.vacation_requests = [
+        {"responseId": 7701, "childId": 3301846, "title": "Juleferie", "startDate": "2026-12-21", "endDate": "2026-12-23"}
+    ]
     aula.daily_overviews = [
         {
             "id": 99001,
@@ -257,6 +260,7 @@ CATALOG = [
     "presence.getSpecificOpeningHourOverview",
     "presence.getVacationAnnouncementsByChildren",
     "presence.getVacationRegistrationsByChildren",
+    "presence.getVacationRegistrationResponse",
     "calendar.getBirthdayEventsForGroup",
     "calendar.getDailyEventCountForGroup",
     "calendar.geteventsbygroupid",
