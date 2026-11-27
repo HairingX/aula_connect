@@ -10,7 +10,7 @@ import json
 import logging
 import re
 import time
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 import aiohttp
 
@@ -50,6 +50,8 @@ from .api.aula_errors import AulaApiError, AulaCredentialError, MethodRefusedErr
 from .catalog_read import FOLLOWED, NO_VALUES, UNKNOWN_VALUES, Account, plan, readable, then
 from .methods import Kind, alike, known
 from .pseudonym import pseudonymised, shapes
+from . import read_marks
+from .read_marks import WATCHED, ReadMark, compare
 from .login import AulaLoginClient
 from .redact import redact
 from .login.exceptions import NetworkError, TokenExpiredError
@@ -111,6 +113,7 @@ class AulaClient:
         self._tabulex_session: Callable[[], aiohttp.ClientSession] = probe_session
         self._tabulex_not_followed: tuple[str, ...] = NOT_FOLLOWED
         self._tabulex_secrets: set[str] = set()
+        self._read_marks: list[ReadMark] = []
 
     @property
     def api(self) -> AulaProxyClient:
@@ -236,7 +239,10 @@ class AulaClient:
         newest page are read as well, but for those Aula marks sensitive, which the client never
         reads. Then each other method of the catalog that only reads is asked once about the
         account's children, institutions and groups, and the first items of a list it answers
-        with, such as posts and albums, one by one.
+        with, such as posts and albums, one by one. Last, each answer that holds marks of what the
+        user has seen - the news feed, the message threads and the notifications - is asked again,
+        `read_marks.RECHECK_AFTER` after it was first at the least, to tell whether reading moved
+        a mark; `responses` holds what it told.
 
         Returns:
             What could not be read, each with its error, and each method of the catalog that only
@@ -246,6 +252,7 @@ class AulaClient:
             AulaCredentialError: The tokens can no longer be renewed; only a new login helps.
         """
         failed: List[str] = []
+        self._read_marks = []
 
         async def read[T](what: str, call: Callable[[], Awaitable[T]]) -> T | None:
             try:
@@ -286,7 +293,35 @@ class AulaClient:
         if self._proxy.has_tabulex():
             await read("Tabulex", self._read_tabulex)
         await self._read_catalog(read, profiles, children, start, end, failed)
+        await self._read_marks_again(read, children)
         return failed
+
+    async def _read_marks_again(
+        self, read: Callable[[str, Callable[[], Awaitable[Any]]], Awaitable[Any]], children: List[AulaChildProfile]
+    ) -> None:
+        """Ask again each method whose answer holds marks of what the user has seen, and keep what changed."""
+        recorder = self._proxy.recorder
+        for watched in WATCHED:
+            first = next((e for e in reversed(recorder.exchanges()) if e.endpoint == watched.method and not e.failed), None)
+            if first is None:
+                continue
+            wait = (first.at + read_marks.RECHECK_AFTER - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            match watched.method:
+                case "posts.getAllPosts":
+                    params = [(name, value) for name, value in parse_qsl(urlsplit(first.url).query) if name != "method"]
+                    again: Callable[[], Awaitable[Any]] = partial(self._ask, watched.method, params)
+                case "messaging.getThreads":
+                    again = self.get_message_threads
+                case _:
+                    again = partial(self.get_notifications, children)
+            await read(f"{watched.method} again", again)
+            second = next(
+                (e for e in reversed(recorder.exchanges()) if e.endpoint == watched.method and e is not first and e.at >= first.at and not e.failed), None
+            )
+            if second is not None:
+                self._read_marks.append(compare(watched, first.response, second.response, (second.at - first.at).total_seconds()))
 
     async def _read_catalog(
         self,
@@ -397,6 +432,7 @@ class AulaClient:
                 found.setdefault(at, set()).update(types)
         return {
             "aula_api_version": self._proxy.api_version,
+            "read_marks": [mark.as_dict() for mark in self._read_marks],
             "exchanges": exchanges,
             "shapes": {
                 kind: {at: sorted(types) for at, types in sorted(found.items())}

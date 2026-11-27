@@ -28,6 +28,15 @@ own children, institutions and main groups, with the values the maintained clien
 then the first items of a list one by one, such as a post by its id; a method it cannot ask, as
 it searches for a text, it names with why.
 
+Three answers hold marks of what the user has seen: `posts.getAllPosts` when the posts were last
+seen (`profileLastSeenPostDate`), `messaging.getThreads` which threads are read and to which
+message (`read`, `lastReadMessageId`), and `notifications.getNotificationsForActiveProfile` the
+notifications still waiting. Aula's web app has no method that marks posts or notifications
+seen, so its server may move them when they are read. `read_everything` therefore asks these
+three again last, five seconds after their first read at the least, and these three only; how
+many marks moved towards seen is in `responses` as `read_marks`. A mark that moves means that
+reading tells Aula something was seen.
+
 A name not listed may still be one Aula has. `read` asks one where it is named as a method that
 gets, `<area>.get<What>` or `<area>.find<What>`, and is about neither messages nor secure documents.
 

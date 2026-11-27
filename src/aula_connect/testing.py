@@ -469,6 +469,8 @@ class SimulatedAulaApi:
         """The news feed's posts, the newest first, in Aula's fields."""
         self.posts_last_seen = "2026-11-20T08:00:00+00:00"
         """When the guardian last saw the posts, as Aula keeps it."""
+        self.reading_posts_sees_them = False
+        """Whether reading the posts moves when they were last seen to that moment."""
         self.closed_days: list[dict[str, object]] = [{"name": "Juleferie", "startDate": "2026-12-21", "endDate": "2027-01-01"}]
         """The days the child's institution is closed, in Aula's fields."""
         self.opening_hours: list[dict[str, object]] = [
@@ -649,7 +651,10 @@ class SimulatedAulaApi:
                     return self._refused()
                 return self._write(method, cast(dict[str, Any], body)) if isinstance(body, dict) else self._refused()
             case "posts.getAllPosts":
-                return self._ok({"posts": self.posts, "hasMorePosts": False, "profileLastSeenPostDate": self.posts_last_seen})
+                answer = self._ok({"posts": self.posts, "hasMorePosts": False, "profileLastSeenPostDate": self.posts_last_seen})
+                if self.reading_posts_sees_them:
+                    self.posts_last_seen = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                return answer
             case "posts.getById":
                 post_id = request.query.get("id", "")
                 post = next((post for post in self.posts if str(post.get("id")) == post_id), None)

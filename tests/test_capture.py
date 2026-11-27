@@ -17,6 +17,7 @@ from aiohttp import web
 from multidict import CIMultiDict, CIMultiDictProxy
 
 from aula_connect import Anomaly, AnomalyKind, AulaClient, AulaLoginClient
+from aula_connect import read_marks
 from aula_connect.api.aula_errors import AulaCredentialError, MethodRefusedError, ParseError
 from aula_connect.api.aula_proxy_client import AulaProxyClient
 from aula_connect.capture import Recorder
@@ -144,7 +145,7 @@ def _account(aula: SimulatedAulaApi) -> None:
 
 
 def _read_everything(
-    key: bytes = KEY, answers: dict[str, Any] | None = None
+    key: bytes = KEY, answers: dict[str, Any] | None = None, seen: bool = False
 ) -> tuple[list[str], dict[str, Any], AulaClient, SimulatedAulaApi]:
     async def run() -> tuple[list[str], dict[str, Any], AulaClient, SimulatedAulaApi]:
         async with (
@@ -156,6 +157,7 @@ def _read_everything(
             tokens = (await login_client.authenticate())["tokens"]
             _account(aula)
             aula.answers.update(answers or {})
+            aula.reading_posts_sees_them = seen
             client = AulaClient(
                 session,
                 access_token=tokens["access_token"],
@@ -228,6 +230,9 @@ def test_reading_everything_reads_each_kind_once_each_event_but_a_lesson_by_its_
         "aulaToken.getAulaToken",
         "minuddannelse",
         *CATALOG,
+        "posts.getAllPosts",
+        "messaging.getThreads",
+        "notifications.getNotificationsForActiveProfile",
     ]
 
 
@@ -763,3 +768,25 @@ def test_reading_everything_looks_for_the_next_birthday_four_weeks_at_a_time_a_y
         return periods
 
     assert _client_run(act) == asked
+
+
+def test_reading_everything_reads_the_marks_of_what_was_seen_again_and_tells_that_none_moved() -> None:
+    _, responses, _, _ = _read_everything()
+    marks = {mark["method"]: mark for mark in responses["read_marks"]}
+    assert list(marks) == ["posts.getAllPosts", "messaging.getThreads", "notifications.getNotificationsForActiveProfile"]
+    assert all(mark["moved"] == 0 for mark in marks.values())
+    assert marks["posts.getAllPosts"]["before"] == marks["posts.getAllPosts"]["after"] == "2026-11-20T08:00:00+00:00"
+
+
+def test_reading_everything_tells_when_reading_the_feed_moved_when_the_posts_were_last_seen() -> None:
+    _, responses, _, _ = _read_everything(seen=True)
+    [feed] = [mark for mark in responses["read_marks"] if mark["method"] == "posts.getAllPosts"]
+    assert feed["moved"] == 1 and feed["before"] != feed["after"] and feed["seconds"] >= 0
+
+
+def test_the_marks_of_what_was_seen_are_read_again_no_sooner_than_their_time_after_the_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(read_marks, "RECHECK_AFTER", timedelta(seconds=0.5))
+    _, responses, _, _ = _read_everything()
+    assert all(mark["seconds"] >= 0.5 for mark in responses["read_marks"])

@@ -154,7 +154,9 @@ failed = await client.read_everything(start, end)  # what could not be read, and
 answers = client.responses(key)  # key: bytes kept secret, the same each time
 ```
 
-`answers` holds Aula's API version, each request with its answer, and the type at each place of
+`answers` holds Aula's API version, whether reading moved Aula's marks of what was seen
+(`read_marks`: the news feed's last seen, the threads read, the notifications waiting, each read
+twice), each request with its answer, and the type at each place of
 each kind of answer, to see where Aula has changed. All the answers say is replaced, but how they
 are built, so that they can be shared in public: every value gets another of the same length and
 kinds of characters, the same one wherever it is and for as long as the key is the same, so that
