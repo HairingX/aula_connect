@@ -272,7 +272,7 @@ the web app does not ask may still be the mobile app's.
 | `NoticeBoardDevice.getMedia` | GET | staff | web | - | - |
 | `NoticeBoardDevice.getPosts` | GET | staff | web | - | - |
 | `notifications.deleteBadgeNotificationByModule` | POST | write | web | - | - |
-| `Notifications.deleteNotifications` | POST | write | web | - | - |
+| `Notifications.deleteNotifications` | POST | write | used | - | `notifications` |
 | `Notifications.getNotificationSettingsForActiveProfile` | GET | read | seen | - | - |
 | `notifications.getNotificationsForActiveProfile` | GET | read | seen | `activeChildrenIds[]`, `activeInstitutionCodes[]` | - |
 | `notifications.isUnsubscribeTokenValid` | GET | token | web | - | - |

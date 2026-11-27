@@ -84,6 +84,10 @@ VACATION: dict[str, object] = {"childIds": [11], "intervals": [{"startDate": MON
 REPLY: dict[str, object] = {"threadId": 7, "message": {"text": "<p>Hej</p>", "attachmentIds": []}, "commonInboxId": None, "otpInboxId": None}
 
 WRITE_REFUSALS: list[tuple[str, object]] = [
+    ("Notifications.deleteNotifications", {"notifications": []}),
+    ("Notifications.deleteNotifications", {"notifications": [{"notificationId": "a"}]}),
+    ("Notifications.deleteNotifications", {"notifications": ["a"]}),
+    ("Notifications.deleteNotifications", {"notifications": [{"notificationId": "a", "institutionProfileId": 21}], "x": 1}),
     ("presence.updateStatusByInstitutionProfileIds", {"institutionProfileIds": [11], "status": 3}),
     ("presence.updateStatusByInstitutionProfileIds", {"institutionProfileIds": [11], "status": True}),
     ("presence.updateStatusByInstitutionProfileIds", {"institutionProfileIds": [12], "status": 1}),

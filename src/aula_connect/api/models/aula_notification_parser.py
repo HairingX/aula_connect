@@ -71,6 +71,7 @@ class AulaNotificationParser(AulaParser):
             institution_code=AulaNotificationParser._parse_str(data.get("institutionCode")),
             institution_profile_id=AulaNotificationParser._parse_int(data.get("institutionProfileId")),
             title=AulaNotificationParser._parse_str(data.get("postTitle")),
+            post_id=AulaNotificationParser._parse_nullable_int_safe(data.get("postId")),
         )
         return result
 

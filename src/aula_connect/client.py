@@ -635,6 +635,11 @@ class AulaClient:
         await self._ensure_valid_token()
         await self._proxy.add_vacation(children, start, end, comment)
 
+    async def delete_notifications(self, notifications: List[AULA_NOTIFICATION_TYPES]) -> None:
+        """Tell Aula the user has seen what `notifications` are about; see `AulaProxyClient.delete_notifications`."""
+        await self._ensure_valid_token()
+        await self._proxy.delete_notifications(notifications)
+
     async def delete_vacation(self, vacation_id: int) -> None:
         """Delete a vacation of one of the login's children; see `AulaProxyClient.delete_vacation`."""
         await self._ensure_valid_token()

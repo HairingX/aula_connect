@@ -93,6 +93,8 @@ class AulaPostNotification(AulaNotificationBase):
     institution_code: str
     institution_profile_id: int
     title: str
+    post_id: int | None = None
+    """The post it is about; None where Aula names none."""
     NOTIFICATION_AREA:NotificationArea = NotificationArea.POSTS
 
 

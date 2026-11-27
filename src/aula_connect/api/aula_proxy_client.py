@@ -722,6 +722,23 @@ class AulaProxyClient:
         _LOGGER.debug("%s: HTTP %s", api_method, response.status_code)
         self._raise_error(response)
 
+    async def delete_notifications(self, notifications: Sequence[AULA_NOTIFICATION_TYPES]) -> None:
+        """Tell Aula the user has seen what `notifications` are about, as Aula's portal does when
+        a post or a picture is shown: Aula deletes them, and what they were about is no longer new.
+
+        Raises:
+            ValueError: No notification is given.
+        """
+        if not notifications:
+            raise ValueError("No notification is given")
+        body = {
+            "notifications": [
+                {"notificationId": item.notification_id, "institutionProfileId": item.institution_profile_id}
+                for item in notifications
+            ]
+        }
+        await self._write("Notifications.deleteNotifications", body)
+
     @staticmethod
     def _child_ids(children: Iterable[AulaChildProfile], name: str = "childIds[]") -> str:
         """The children's institution profile ids as a query's parameters, each once."""

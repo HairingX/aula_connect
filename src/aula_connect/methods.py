@@ -290,7 +290,7 @@ _ALL: tuple[AulaMethod, ...] = (
     AulaMethod("NoticeBoardDevice.getMedia", "GET", _STAFF, _WEB),
     AulaMethod("NoticeBoardDevice.getPosts", "GET", _STAFF, _WEB),
     AulaMethod("notifications.deleteBadgeNotificationByModule", "POST", _W, _WEB),
-    AulaMethod("Notifications.deleteNotifications", "POST", _W, _WEB),
+    AulaMethod("Notifications.deleteNotifications", "POST", _W, _USED, (), _q("notifications")),
     AulaMethod("Notifications.getNotificationSettingsForActiveProfile", "GET", _R, _SEEN),
     AulaMethod("notifications.getNotificationsForActiveProfile", "GET", _R, _SEEN, _q("activeChildrenIds[]", "activeInstitutionCodes[]")),
     AulaMethod("notifications.isUnsubscribeTokenValid", "GET", _T, _WEB),

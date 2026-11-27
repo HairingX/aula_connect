@@ -647,6 +647,7 @@ class SimulatedAulaApi:
                 | "calendar.deleteEvent"
                 | "calendar.respondToVacationRegistrationRequest"
                 | "messaging.reply"
+                | "Notifications.deleteNotifications"
             ):
                 try:
                     body: object = await request.json()
@@ -777,6 +778,23 @@ class SimulatedAulaApi:
                         "childIds": list(cast(list[int], body["childIds"])),
                     }
                 )
+                return self._ok(None)
+            case "Notifications.deleteNotifications":
+                asked = body.get("notifications")
+                if set(body) != {"notifications"} or not isinstance(asked, list) or not asked:
+                    return self._refused()
+                items = [cast(dict[str, object], item) for item in cast(list[object], asked) if isinstance(item, dict)]
+                keys = {
+                    (item.get("notificationId"), item.get("institutionProfileId"))
+                    for item in items
+                    if set(item) == {"notificationId", "institutionProfileId"}
+                }
+                if len(keys) != len(cast(list[object], asked)):
+                    return self._refused()
+                self.notifications = [
+                    item for item in self.notifications
+                    if (item.get("notificationId"), item.get("institutionProfileId")) not in keys
+                ]
                 return self._ok(None)
             case "calendar.deleteEvent":
                 found = [vacation for vacation in self.vacations if set(body) == {"id"} and vacation["vacationId"] == body["id"]]
