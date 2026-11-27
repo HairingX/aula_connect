@@ -44,6 +44,10 @@ class AulaPostParser(AulaParser):
             groups=[name for group in post.get("sharedWithGroups") or [] if (name := group.get("name"))],
             attachments=[parse._attachment(attachment) for attachment in post.get("attachments") or []],
             comment_count=parse._parse_int(post.get("commentCount") or 0),
+            children=[
+                child_id for related in post.get("relatedProfiles") or []
+                if related.get("role") == "child" and isinstance(child_id := related.get("id"), int)
+            ],
         )
 
     @staticmethod

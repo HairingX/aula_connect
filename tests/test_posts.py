@@ -36,6 +36,7 @@ def test_the_posts_are_read_with_the_guardian_s_and_the_children_s_ids_and_when_
     assert post.timestamp == datetime(2026, 11, 23, 8, tzinfo=timezone.utc)
     assert (post.is_important, post.important_from, post.important_to) == (True, date(2026, 11, 23), date(2026, 11, 27))
     assert (post.author, post.institution, post.groups) == ("Kontoret", "School", ["Hele skolen"])
+    assert post.children == [11]
     assert [(a.name, a.url, a.thumbnail_url, a.is_media) for a in post.attachments] == [
         ("billede.jpg", "https://files.example.org/fil.jpg", "https://files.example.org/stor.jpg", True),
         ("seddel.pdf", "https://files.example.org/seddel.pdf", None, False),
@@ -84,3 +85,11 @@ def test_a_closed_day_without_a_start_or_an_end_and_no_children_read_nothing_or_
         return await client.get_closed_days([]), await client.get_opening_hours([], date(2026, 1, 1), date(2026, 1, 2))
 
     assert _client_run(act) == ([], [])
+
+
+def test_a_post_concerns_the_children_aula_relates_it_to_and_no_other_profile() -> None:
+    post = AulaPostParser.parse_post({
+        "id": 1,
+        "relatedProfiles": [{"id": 11, "role": "child"}, {"id": 21, "role": "guardian"}, {"id": None, "role": "child"}, {"id": 12, "role": "child"}],
+    })
+    assert post.children == [11, 12]

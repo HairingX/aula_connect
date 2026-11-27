@@ -1,6 +1,6 @@
 """The posts of Aula's news feed, and the days and hours an institution is open."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from typing import List
 
@@ -37,6 +37,8 @@ class AulaPost:
     """The groups it is shared with, by their names."""
     attachments: List[AulaPostAttachment]
     comment_count: int
+    children: List[int] = field(default_factory=lambda: list[int]())
+    """The institution profile ids of the user's children it concerns, as Aula relates it to them."""
 
 
 @dataclass

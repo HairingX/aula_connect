@@ -463,6 +463,7 @@ class SimulatedAulaApi:
                 "attachments": [],
                 "ownerProfile": {"fullName": "Kontoret", "institution": {"institutionName": "School"}},
                 "sharedWithGroups": [{"name": "Hele skolen"}],
+                "relatedProfiles": [{"id": 11, "role": "child"}],
             }
         ]
         """The news feed's posts, the newest first, in Aula's fields."""

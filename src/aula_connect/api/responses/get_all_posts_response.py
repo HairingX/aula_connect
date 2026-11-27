@@ -48,6 +48,12 @@ class AulaPostGroupData(TypedDict):
     name: NotRequired[str|None]
 
 
+class AulaPostRelatedProfileData(TypedDict):
+    """A profile of the user's that a post concerns, such as a guardian's child."""
+    id: NotRequired[int|None]
+    role: NotRequired[str|None]
+
+
 class AulaPostData(TypedDict):
     """A post."""
     id: NotRequired[int|None]
@@ -64,6 +70,7 @@ class AulaPostData(TypedDict):
     attachments: NotRequired[List[AulaPostAttachmentData]|None]
     ownerProfile: NotRequired[AulaPostOwnerData|None]
     sharedWithGroups: NotRequired[List[AulaPostGroupData]|None]
+    relatedProfiles: NotRequired[List[AulaPostRelatedProfileData]|None]
 
 
 class AulaPostsData(TypedDict):
