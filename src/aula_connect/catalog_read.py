@@ -46,6 +46,7 @@ NO_VALUES = {
     "search.findProfilesAndGroups": "it searches for a text",
     "search.findRecipients": "it searches for a text",
     "groups.getMemberships": "it names the other members of a group, read in short already",
+    "messaging.getOtpInboxesForLoggedInProfile": "Aula's own web app asks it only of a group home's login, and refuses a guardian",
 }
 """Why a method that only reads is not asked, by its name."""
 
@@ -94,7 +95,6 @@ def plan(account: Account) -> list[tuple[str, Params]]:
         ("CalendarFeed.getFeedConfigurations", ()),
         ("CalendarFeed.getPolicyAnswer", ()),
         ("messaging.getCommonInboxes", _many("institutionProfileIds[]", account.own)),
-        ("messaging.getOtpInboxesForLoggedInProfile", ()),
         ("messaging.getFolders", (("IncludeDeletedFolders", "false"),)),
         ("Notifications.getNotificationSettingsForActiveProfile", ()),
         (
@@ -140,16 +140,29 @@ def _ids(data: Any, key: str) -> list[str]:
     return [str(item) for item in found if item is not None][:ITEMS]
 
 
+def _commented(data: Any) -> set[str]:
+    """The ids of the posts in `data` that have comments."""
+    posts = cast(dict[str, Any], data).get("posts") if isinstance(data, dict) else None
+    items = [cast(dict[str, Any], item) for item in cast(list[Any], posts) if isinstance(item, dict)] if isinstance(posts, list) else []
+    return {str(item.get("id")) for item in items if isinstance(item.get("commentCount"), int) and item["commentCount"] > 0}
+
+
 def then(method: str, data: Any, account: Account) -> list[tuple[str, Params]]:
     """Returns what is asked of the items `method` answered with `data`, one by one."""
     match method:
         case "posts.getAllPosts":
+            # Aula refuses the comments of a post that has none, as for one that allows none.
+            commented = _commented(data)
             return [
                 asked
                 for post in _ids(data, "posts")
                 for asked in (
                     ("posts.getById", (("id", post),)),
-                    ("comments.getComments", (("parentType", "Post"), ("parentId", post), ("startIndex", "0"), ("limit", str(LIMIT)))),
+                    *(
+                        [("comments.getComments", (("parentType", "Post"), ("parentId", post), ("startIndex", "0"), ("limit", str(LIMIT))))]
+                        if post in commented
+                        else []
+                    ),
                 )
             ]
         case "gallery.getAlbums":

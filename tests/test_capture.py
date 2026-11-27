@@ -249,7 +249,6 @@ CATALOG = [
     "CalendarFeed.getFeedConfigurations",
     "CalendarFeed.getPolicyAnswer",
     "messaging.getCommonInboxes",
-    "messaging.getOtpInboxesForLoggedInProfile",
     "messaging.getFolders",
     "Notifications.getNotificationSettingsForActiveProfile",
     "posts.getAllPosts",

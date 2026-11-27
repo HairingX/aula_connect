@@ -46,6 +46,61 @@
    "str"
   ]
  },
+ "GET CalendarFeed.getFeedConfigurations": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "list"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
+ "GET CalendarFeed.getPolicyAnswer": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "object"
+  ],
+  "data.policyAccepted": [
+   "bool"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
  "GET Notifications.getNotificationSettingsForActiveProfile": {
   ".": [
    "object"
@@ -2784,6 +2839,32 @@
    "int"
   ]
  },
+ "GET messaging.getCommonInboxes": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "list"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
  "GET messaging.getFolders": {
   ".": [
    "object"
@@ -4239,6 +4320,7 @@
    "int"
   ],
   "data.posts[].attachments[].creator.profilePicture": [
+   "null",
    "object"
   ],
   "data.posts[].attachments[].creator.profilePicture.bucket": [
@@ -4349,6 +4431,7 @@
    "int"
   ],
   "data.posts[].attachments[].media.creator.profilePicture": [
+   "null",
    "object"
   ],
   "data.posts[].attachments[].media.creator.profilePicture.bucket": [
@@ -4857,6 +4940,7 @@
    "int"
   ],
   "data.attachments[].creator.profilePicture": [
+   "null",
    "object"
   ],
   "data.attachments[].creator.profilePicture.bucket": [
@@ -4890,6 +4974,7 @@
    "null"
   ],
   "data.attachments[].file": [
+   "null",
    "object"
   ],
   "data.attachments[].file.bucket": [
@@ -4920,6 +5005,136 @@
    "null"
   ],
   "data.attachments[].media": [
+   "null",
+   "object"
+  ],
+  "data.attachments[].media.album": [
+   "null"
+  ],
+  "data.attachments[].media.allowsComments": [
+   "bool"
+  ],
+  "data.attachments[].media.canViewComments": [
+   "bool"
+  ],
+  "data.attachments[].media.commentCount": [
+   "int"
+  ],
+  "data.attachments[].media.conversionStatus": [
+   "str"
+  ],
+  "data.attachments[].media.creator": [
+   "object"
+  ],
+  "data.attachments[].media.creator.id": [
+   "int"
+  ],
+  "data.attachments[].media.creator.institutionCode": [
+   "str"
+  ],
+  "data.attachments[].media.creator.institutionName": [
+   "str"
+  ],
+  "data.attachments[].media.creator.institutionRole": [
+   "str"
+  ],
+  "data.attachments[].media.creator.mainGroup": [
+   "null"
+  ],
+  "data.attachments[].media.creator.metadata": [
+   "str"
+  ],
+  "data.attachments[].media.creator.name": [
+   "str"
+  ],
+  "data.attachments[].media.creator.profileId": [
+   "int"
+  ],
+  "data.attachments[].media.creator.profilePicture": [
+   "null"
+  ],
+  "data.attachments[].media.creator.role": [
+   "str"
+  ],
+  "data.attachments[].media.creator.shortName": [
+   "str"
+  ],
+  "data.attachments[].media.currentUserCanDelete": [
+   "bool"
+  ],
+  "data.attachments[].media.currentUserCanEditMetaData": [
+   "bool"
+  ],
+  "data.attachments[].media.currentUserCanEditTags": [
+   "bool"
+  ],
+  "data.attachments[].media.currentUserCanReport": [
+   "bool"
+  ],
+  "data.attachments[].media.description": [
+   "null"
+  ],
+  "data.attachments[].media.duration": [
+   "null"
+  ],
+  "data.attachments[].media.extraSmallThumbnailUrl": [
+   "str"
+  ],
+  "data.attachments[].media.file": [
+   "object"
+  ],
+  "data.attachments[].media.file.bucket": [
+   "str"
+  ],
+  "data.attachments[].media.file.created": [
+   "str"
+  ],
+  "data.attachments[].media.file.id": [
+   "int"
+  ],
+  "data.attachments[].media.file.key": [
+   "str"
+  ],
+  "data.attachments[].media.file.name": [
+   "str"
+  ],
+  "data.attachments[].media.file.scanningStatus": [
+   "str"
+  ],
+  "data.attachments[].media.file.url": [
+   "str"
+  ],
+  "data.attachments[].media.hasVideoThumbnail": [
+   "bool"
+  ],
+  "data.attachments[].media.id": [
+   "int"
+  ],
+  "data.attachments[].media.isDeleted": [
+   "bool"
+  ],
+  "data.attachments[].media.isUploadPending": [
+   "null"
+  ],
+  "data.attachments[].media.largeThumbnailUrl": [
+   "str"
+  ],
+  "data.attachments[].media.mediaType": [
+   "str"
+  ],
+  "data.attachments[].media.mediumThumbnailUrl": [
+   "str"
+  ],
+  "data.attachments[].media.smallThumbnailUrl": [
+   "str"
+  ],
+  "data.attachments[].media.tags": [
+   "list"
+  ],
+  "data.attachments[].media.thumbnailUrl": [
+   "str"
+  ],
+  "data.attachments[].media.title": [
    "null"
   ],
   "data.attachments[].name": [
@@ -5035,6 +5250,7 @@
    "int"
   ],
   "data.ownerProfile.profilePicture": [
+   "null",
    "object"
   ],
   "data.ownerProfile.profilePicture.bucket": [
@@ -5224,6 +5440,62 @@
    "int"
   ]
  },
+ "GET presence.getClosedDays": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "object"
+  ],
+  "data.institutionClosedDays": [
+   "list"
+  ],
+  "data.institutionClosedDays[]": [
+   "object"
+  ],
+  "data.institutionClosedDays[].closedDaysOverview": [
+   "object"
+  ],
+  "data.institutionClosedDays[].closedDaysOverview.closedDays": [
+   "list"
+  ],
+  "data.institutionClosedDays[].closedDaysOverview.closedDays[]": [
+   "object"
+  ],
+  "data.institutionClosedDays[].closedDaysOverview.closedDays[].endDate": [
+   "str"
+  ],
+  "data.institutionClosedDays[].closedDaysOverview.closedDays[].id": [
+   "int"
+  ],
+  "data.institutionClosedDays[].closedDaysOverview.closedDays[].name": [
+   "str"
+  ],
+  "data.institutionClosedDays[].closedDaysOverview.closedDays[].startDate": [
+   "str"
+  ],
+  "data.institutionClosedDays[].institutionCode": [
+   "str"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
  "GET presence.getDailyOverview": {
   ".": [
    "object"
@@ -5245,7 +5517,8 @@
    "str"
   ],
   "data[].comment": [
-   "null"
+   "null",
+   "str"
   ],
   "data[].editablePresenceStates": [
    "list"
@@ -5375,6 +5648,118 @@
   ],
   "data[].vacationNote": [
    "null"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
+ "GET presence.getGeneralOpeningHours": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "object"
+  ],
+  "data.institutionOpeningHours": [
+   "list"
+  ],
+  "data.institutionOpeningHours[]": [
+   "object"
+  ],
+  "data.institutionOpeningHours[].institutionCode": [
+   "str"
+  ],
+  "data.institutionOpeningHours[].openingHours": [
+   "list"
+  ],
+  "data.institutionOpeningHours[].openingHours[]": [
+   "object"
+  ],
+  "data.institutionOpeningHours[].openingHours[].closeTime": [
+   "str"
+  ],
+  "data.institutionOpeningHours[].openingHours[].dayOfWeek": [
+   "int"
+  ],
+  "data.institutionOpeningHours[].openingHours[].institutionCode": [
+   "str"
+  ],
+  "data.institutionOpeningHours[].openingHours[].openTime": [
+   "str"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
+ "GET presence.getOpeningHoursByInstitutionCodes": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "object"
+  ],
+  "data.openingHoursOverviewDto": [
+   "list"
+  ],
+  "data.openingHoursOverviewDto[]": [
+   "object"
+  ],
+  "data.openingHoursOverviewDto[].institutionCode": [
+   "str"
+  ],
+  "data.openingHoursOverviewDto[].openingHoursDto": [
+   "list"
+  ],
+  "data.openingHoursOverviewDto[].openingHoursDto[]": [
+   "object"
+  ],
+  "data.openingHoursOverviewDto[].openingHoursDto[].closeTime": [
+   "str"
+  ],
+  "data.openingHoursOverviewDto[].openingHoursDto[].date": [
+   "str"
+  ],
+  "data.openingHoursOverviewDto[].openingHoursDto[].institutionCode": [
+   "str"
+  ],
+  "data.openingHoursOverviewDto[].openingHoursDto[].name": [
+   "null"
+  ],
+  "data.openingHoursOverviewDto[].openingHoursDto[].openTime": [
+   "str"
+  ],
+  "data.openingHoursOverviewDto[].openingHoursDto[].type": [
+   "str"
   ],
   "method": [
    "str"
@@ -5833,6 +6218,35 @@
   ],
   "data.presenceWeekTemplates[].institutionProfile.shortName": [
    "str"
+  ],
+  "method": [
+   "str"
+  ],
+  "module": [
+   "str"
+  ],
+  "status": [
+   "object"
+  ],
+  "status.code": [
+   "int"
+  ],
+  "status.message": [
+   "str"
+  ],
+  "version": [
+   "int"
+  ]
+ },
+ "GET presence.getSpecificOpeningHourOverview": {
+  ".": [
+   "object"
+  ],
+  "data": [
+   "object"
+  ],
+  "data.specificOpeningHoursWithInstitutions": [
+   "list"
   ],
   "method": [
    "str"

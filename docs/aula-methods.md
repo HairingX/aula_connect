@@ -25,8 +25,9 @@ and never one of a kind it does not ask, whatever the case of its name.
 
 `AulaClient.read_everything` asks every listed method that only reads once, about the account's
 own children, institutions and main groups, with the values the maintained client sends, and
-then the first items of a list one by one, such as a post by its id; a method it cannot ask, as
-it searches for a text, it names with why.
+then the first items of a list one by one, such as a post by its id, and a post's comments only
+where it has some, as Aula refuses them otherwise; a method it cannot ask, as it searches for a
+text or Aula's own web app asks it only of another kind of login, it names with why.
 
 Three answers hold marks of what the user has seen: `posts.getAllPosts` when the posts were last
 seen (`profileLastSeenPostDate`), `messaging.getThreads` which threads are read and to which

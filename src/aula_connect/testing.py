@@ -459,7 +459,7 @@ class SimulatedAulaApi:
                 "isImportant": False,
                 "importantFrom": None,
                 "importantTo": None,
-                "commentCount": 0,
+                "commentCount": 1,
                 "attachments": [],
                 "ownerProfile": {"fullName": "Kontoret", "institution": {"institutionName": "School"}},
                 "sharedWithGroups": [{"name": "Hele skolen"}],
@@ -486,6 +486,9 @@ class SimulatedAulaApi:
             "presence.getPresenceTemplates": {},
             "Notifications.getNotificationSettingsForActiveProfile": {},
             "commonFiles.getCommonFiles": {},
+            "presence.getGeneralOpeningHours": {"institutionOpeningHours": []},
+            "presence.getSpecificOpeningHourOverview": {"specificOpeningHoursWithInstitutions": []},
+            "CalendarFeed.getPolicyAnswer": {"policyAccepted": False},
         }
         """What Aula answers each other method of its catalog that only reads with, by its name; an
         empty list where none is given."""

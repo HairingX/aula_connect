@@ -34,3 +34,15 @@ def test_the_first_vacation_requests_are_read_one_by_one() -> None:
         ("presence.getVacationRegistrationResponse", (("vacationRegistrationResponseId", "5"),))
     ]
     assert then("presence.getVacationRegistrationsByChildren", {"no": "list"}, ACCOUNT) == []
+
+
+def test_the_comments_of_a_post_are_read_only_where_it_has_some() -> None:
+    posts = {"posts": [{"id": 1, "commentCount": 2}, {"id": 2, "commentCount": 0}, {"id": 3}, {"id": 4, "commentCount": "2"}, "x"]}
+    asked = [params[1][1] for method, params in then("posts.getAllPosts", posts, ACCOUNT) if method == "comments.getComments"]
+    assert asked == ["1"]
+    assert then("posts.getAllPosts", [{"id": 1, "commentCount": 2}], ACCOUNT) == [("posts.getById", (("id", "1"),))]
+
+
+def test_the_inboxes_of_a_group_home_are_never_asked_of_a_guardian() -> None:
+    assert "messaging.getOtpInboxesForLoggedInProfile" not in [method for method, _ in plan(ACCOUNT)]
+    assert "refuses a guardian" in NO_VALUES["messaging.getOtpInboxesForLoggedInProfile"]
