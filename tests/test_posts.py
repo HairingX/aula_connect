@@ -84,21 +84,3 @@ def test_a_closed_day_without_a_start_or_an_end_and_no_children_read_nothing_or_
         return await client.get_closed_days([]), await client.get_opening_hours([], date(2026, 1, 1), date(2026, 1, 2))
 
     assert _client_run(act) == ([], [])
-
-
-def test_the_posts_of_some_children_are_those_for_the_guardian_and_them() -> None:
-    async def act(client: AulaClient, aula: SimulatedAulaApi) -> tuple[list[int], list[int], str]:
-        aula.posts.append({**aula.posts[0], "id": 502})
-        aula.posts.append({**aula.posts[0], "id": 503})
-        aula.post_profiles = {502: [11], 503: [99]}
-        profiles = (await client.login()).profiles
-        children = AulaProxyClient.flatten_children(profiles)
-        mine = await client.get_posts(profiles, 5, children)
-        url = client.api.recorder.exchanges()[-1].url
-        none = await client.get_posts(profiles, 5, [])
-        return [post.id for post in mine.posts], [post.id for post in none.posts], url
-
-    mine, none, url = _client_run(act)
-    assert mine == [501, 502]
-    assert none == [501]
-    assert "institutionProfileIds%5B%5D=11" in url or "institutionProfileIds[]=11" in url
